@@ -1,0 +1,209 @@
+
+    
+    Issues:
+        strain_lrn is not returning any results
+            Where is strain_lrn being computed?
+                At function create_strain_lrn in analysis2
+
+        specphe (specific phenotypes) and cofit not being computed (analysis3)
+        No description for NormalizeByScaffold in analysis1
+
+    Questions:
+        Why are we normalizing by scaffold?
+        There are issues with some outputs: fit_log_ratios_unnormalized_naive:
+            The dataframe isn't combined, it's just two dataframes stacked on top of 
+            one another.
+
+
+    Outputs:
+
+    The Standard output columns are:
+            locusId, sysName, desc experiment_1, experiment_2, ..., experiment_n
+            where experiment_1 etc refer to the setName + Index values
+            These often have the same number of rows and contain numerical values under 
+            the various experiments.
+
+    Throughout the following, these column data types are fixed:
+        locusId (str): The gene ID, also known as 'locus ID'
+        desc (str): Short description of what a gene does
+        name (str): Name of the experiment, or name of a gene 
+        strand (str): Either '+' or '-', indicating positive or minus strand, respectively.
+        begin (int): Where the object of interest begins within a scaffold
+        end (int): Where the object of interest ends within a scaffold
+        sysName (str): Another identifier for a gene
+
+
+        fit_logratios_unnormalized_naive: The fitness logratios that are unnormalized
+                                        Have Standard output columns
+        cofit: Contains columns:
+            locusId, sysName, desc, hitId, cofit, rank, hitSysName, hitDesc
+
+        fit_logratios:
+                                        Have Standard output columns
+
+        fit_quality:
+            Has the following columns:
+                name, short, t0set, num, nMapped, nPastEnd, nGenic, nUsed, gMed, gMedt0, 
+                gMean, cor12, mad12, mad12c, mad12c_t0, opcor, adjcor, gccor, maxFit, u
+
+        fit_standard_error_naive:
+                                        Have Standard output columns
+
+        fit_standard_error_obs:
+                                        Have Standard output columns
+
+        fit_genes: (Complete) The genes.GC file with an extra column called 'used' which
+                        contains boolean values for whether or not the gene was used.
+                        Contains the following columns:
+                            locusId (str):
+                            sysName (str):	
+                            type (int): Identifier for the type of gene
+                            scaffoldId (str):	
+                            begin (int):	
+                            end (int):	
+                            strand (str): '+'|'-'	
+                            name (str): typical name for gene, e.g. "thrL"	
+                            desc (str): What does the gene do?
+                            GC (float):	Fraction of nucleotides that is GC
+                            nTA (int):	number of TAs?
+                            used (bool): gene used in analysis?
+
+        fit_t:
+                                        Have Standard output columns
+
+        gene_counts:
+                                        Have Standard output columns
+
+                    Counts the number of times insertions occured in that gene in a given experiment.
+
+        high_fitness: 
+            Hybrid of a few of the other tables: Columns:
+            locusId, expName, fit, t, se, sdNaive, name, Group, Condition_1, 
+            Concentration_1, Units_1, Media, short, u, maxFit, gMean, sysName, desc
+
+        specific_phenotypes:
+            locusId, sysName, desc, short, Group, Condition_1, Concentraion_1, Units_1, Condition_2, Concentration_2, Units_2
+
+        strain_fit:
+            barcode, rcbarcode, scaffold, strand, pos, locusId, f, used, enoughT0, experiment_1   experiment_2  ... experiment_n
+            
+        strong:
+            locusId, name, t, lrn, sysName, desc, short
+        expsUsed:
+           All the column names from the input experiments file + the following four:
+                num (int) (counts which experiment, 
+                short (str): either 'Time0' or a brief description of experiment conditions,
+                name (str): the experiment name, e.g. set2IT003 
+                t0set (str): A date which refers to the time0 to which we compare this one 
+        
+
+
+
+    Program is divided into 7 phases:
+        1. Data Preparation 1: Naming and formatting (labeling)
+        2. Data Preparation 2: Accounting for Controls (Known as "Time0")
+                a) Finding and Summing Controls
+                b) Finding which strains and genes are good to use and pass thresholds.
+        3. Computations 1: Log Ratios, T-scores and Normalizations
+        4. Computations 2: Correlations and meta-statistics
+        5. Computations 3: Cofitness and finding high fitness values
+        6. Exporting and Visualizing Graphs
+        7. Website building
+
+
+    Requirements:
+        
+       All the locusIds in all.poolcount have to exist in the genes file (genes.GC)
+
+       Experiments File:
+        If you want to drop an experiment (row in experiments file), you must create a column
+         called 'Drop' and write in "true" (upper or lower cases don't matter). You can leave
+         this column in the other experiments as nothing. You can also remove the row representing
+         the experiment from the file entirely.
+        The 'SetName' column contains the setname (lane) the experiments come from, 
+        where as the 'Index' is more specifically the exact solution. 
+        So the 'SetName' + 'Index' indicates a unique collection.
+
+        Don't allow users to add 'strainsUsed'
+        
+
+    Random:
+
+        Individual Experiments are denoted both by a row in the 'Experiments' file, and by a SetName.Index;
+        Either one can be thought of as an individual experiment. Eventually, the "." in the SetName.Index is
+        removed, and we are left with just SetNameIndex.
+        SetNames can also be thought of as "lanes".
+        How should dates be labelled? always X1/X2/X3..? 
+        On any given date, a few experiments are Time0 experiments. So for example on  
+            "6/19/2014" there were a few experiments started out of "Keio_ML9_set2", and we 
+            can store all of those experiments in a dict.
+
+        t0tot takes dates and sums all columns of all_df (that are experiments) over those dates.
+        t0gN takes it one step further, and sums over the rows that have the same locusIds and that
+            have central insertions.
+        
+
+
+    Input function is through RunFEBA.py:
+
+
+        The 'readratio' is the ratio between the sum of all final values for a setIndex Name
+            from all.poolcount and the sum of the corresponding t0 values.
+            It is used in calculating the Strain Fitness.
+
+        The experiments file has to follow very specific requirements:
+            If you want to Drop an experiment, you need to create a column
+            for all your experiments called "Drop", and within that column
+            you must add the value "TRUE" (or "True").
+            The column 'name' must eventually be equivalent to the indexes
+                in all.poolcount
+            The column 'Group' must show if it's Time0 by saying 'Time0' when it
+                is indeed a time0 element
+
+        You can also add a list of set-index names to ignore
+
+
+
+    ScaffoldId vs Scaffold as column name?
+   
+    The total number of rows in the dataframes is equivalent to the numbers of
+        unique locusIds in strainLocus[strainsUsed].
+
+
+    gene_fit_d:
+
+    g -> genes
+    lr -> log ratios
+    lrn -> log ratios normalized
+    lrn1 -> log ratios normalized 1st half
+    q -> quality
+    u -> used
+    se -> standard error
+    tmp -> temporary
+
+
+        Stores combined data over all set_index_names.
+            *All series/dataframes ave the exact same number of rows.
+        g: A list of locusIds
+        lr: Some rows are completely empty (?), whenever one col has values, 
+            the other also has values.
+        lr1/ lr2: If two columns, if one has value, the other has the opposite value 
+
+        At the end of the program, gene_fit_d should have keys:
+            'g', 'lrRaw', 'sd', 'sumsq', 'sdNaive', 'n', 'nEff', 'tot', 'tot0', 'lr', 
+            'lrNaive', 'lrn', 'lr1', 'lr2', 'lrn1', 'lrn2', 'tot1', 'tot1_0', 'tot2', 
+            'tot2_0', 'pseudovar', 'se', 't', 'version', 'q', 'genesUsed', 'strainsUsed', 
+            'genesUsed12', 'gN', 't0_gN', 'strains', 'strain_lr', 'strain_se', 'high' 
+    
+    fitQuality:
+        This returns a matrix with individual stats per setindexname. So if there are 4 set index names,
+        e.g. set2IT001, set2IT002, set2IT003, set2IT004; You would get a matrix with the columns:
+            nUsed, gMed, gMedt0, gMean, cor12, mad12, mad12c, mad12c_t0, opcor, adjcor, gccor, maxFit
+        and the rows of the 4 set index names.
+
+    Revisions:
+        all_gN isn't used but created early on and stored as a variable (Why?)
+        experiments DataFrame is updated at random times, e.g. in FEBA_Fit it is 
+                updated to have 'short' set to Time0 if group is Time0, which could
+                have been done earlier in the program, e.g. in 'RunFEBA'. Also,
+                the t0set is created at a random point.
