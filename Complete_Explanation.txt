@@ -32,7 +32,7 @@
                 reads found.
 
     Function Descriptions:
-        create_strain_lrn: 
+        create_strain_lrn (analysis2): 
             We take the strain log ratios, which are created in the function 
             'StrainFitness' from analysis1 and we normalize them by finding
             the median over all the values from the same scaffolds and
@@ -41,18 +41,79 @@
             normalized log ratios, and if those exist at a read, then
             we subtract those instead of the median.
 
-        AvgStrainFitness: Done for each experiment_name
+        AvgStrainFitness (analysis1): Done for each experiment_name
             We take three main input variables:
                 1. exp_used_strains: The used reads values from all_df, 
                     it is a pandas Series of values, whose index is the row number
                     from all.poolcount where it originated.
+                    length = nAllStrainsCentralGoodGenes*
                 2. t0_used: The sum of the t0 reads for this experiment,
                     taken from all_df, and summed over the columns whose
                     experiments are associated with the t0 value for
                     this experiment_name. This is also a pandas Series,
                     whose  indexes are exactly the same as for exp_used_strains.
+                    length = nAllStrainsCentralGoodGenes*
                 3. all_used_locId: The associated locusIds for the above
-                    two pandas Series,
+                    two pandas Series, has the same index. Also taken
+                    from all.poolcount (all_df)
+                    length = nAllStrainsCentralGoodGenes*
+            This function is run 3 times. The first time we run it on
+            all the strains who are inserted in a good place in genes
+            that we are using with high enough abundance. main_df
+            The second time we run it we are running it on the strains who are 
+            inserted within 0.1 and 0.5 of the gene (0.1<f<0.5). df_1
+            The third time we run it we are running it on the strains who are 
+            inserted within 0.5 and 0.9 of the gene (0.5<f<0.9). df_2
+            The next step is that we get the 'readratio', which is a float.
+            The readratio is the sum of the reads for this experiment
+            divided by the sum of the reads for the time0s for this
+            experiment.
+            Now we create a variable called 'strainFit', which is essentially
+            taking the log2 values of exp_used_strains (the experiment original
+            reads) and subtracting the log2 values of the time0s for those reads,
+            and then doing a median normalization of the difference.
+            So log2(originalreads) - log2(t0reads) = x; mednorm(x).
+            BUT we add in the readratio to the original reads and the inverse
+            of the readratio to the t0reads. Why?
+            Now we create strainPseudoCount. In order to create strainPseudo count,
+            first we get the medians of the strainFit values (already log2 normalized) 
+            over the various genes. So suppose there are 15 strains (log2 normalized)
+            in one gene (e.g. 'trp'); then we take the median of all those and essentially
+            create a mapping from locusId -> median. This is called geneFitMedians.
+            Then we also get a counting of how many times each gene was inserted into,
+            so for that gene 'trp' we would get a mapping to the number 15. This 
+            is done for all genes (represented by locusId strings) and is placed
+            in a variable called locusId2TimesSeen_d.
+            Now we create the strainPseudoCount list, whose length will be 
+            nAllStrainsCentralGoodGenes(*), i.o.w as long as the three main
+            inputs. How we create it is like this:
+            We go through each locusId in locusId2TimesSeen_d, and check if the number
+            of times it was seen is greater than a threshold integer called
+            'minGeneFactorNStrains'. If it is greater than this threshold, we
+            add the number 2^(median of the locusId (from geneFitMedians)) multiplied
+            by the readratio, which is sum(reads)/sum(time0s). Which is essentially
+            reversing the strainFit action, making strainPseudoCounts essentially
+            the strain counts but over the medians.
+            That being said, if the number of times the locusId was seen doesn't 
+            pass the threshold, then we simply add the readratio itself to the
+            strainPseudoCount list.
+            Now we use the strainPseudoCount list to adjust the strainFit values.
+            This part is unclear to me why it's done the way it is done.
+            In order to create an adjusted StrainFit, we take the strainPseudoCount
+            list, and take its square root (element-wise) and call it expPC,
+            then we create a T0 pseudocount which is 1/expPC (call it t0PC). 
+            Now we adjust the strainFit by adding these PseudoCount square root
+            and inverse to their respective original reads values, taking 
+            the log2 of those and subtracting the T0 sum from the Exp sum,
+            and also subtracting a 'strainFitAdjust' number. But for this
+            strainFit, which is adjusted, we don't apply median normalization
+            for some reason (?).
+            Now we compute the Standard Deviation (How is this the standard deviation?)
+            
+            
+
+
+
                     
 
             Within this function we create the following variables:
@@ -87,10 +148,10 @@
             nAllStrainsCentralGoodGenes = number of rows in all.poolcount with 0.1<f<0.9
                                           AND all locusIds are in the list 'GenesUsed'
                                             (27659 in Keio) - also known as nUsefulReads
-
-            nAllStrainsCentralGoodGenes* = number of rows in all.poolcount with 0.1<f<0.9
+            nAllStrainsCentralGoodGenes12 = number of rows in all.poolcount with 0.1<f<0.9
                                           AND all locusIds are in the list 'GenesUsed12'
                                             (27659 in Keio) - also known as nUsefulReads
+            nAllStrainsCentralGoodGenes* = either of nAllStrainsCentralGoodGenes(12) 
             nTotalGenes = number of rows (genes.GC)
             nGenesUsed = (len(genesUsed)) number of rows in genes.GC that we actually use
                         which is equivalent to the number of unique genes
@@ -107,8 +168,8 @@
         There are issues with some outputs: fit_log_ratios_unnormalized_naive:
             The dataframe isn't combined, it's just two dataframes stacked on top of 
             one another.
-        What does get StrainPseudoCount do?
-        What does AvgStrainFitness do?
+        Should we allow people to get the raw results from their reads, the raw log2
+        differences between values and time0s? Instead of all the normalization
 
 
     Outputs:

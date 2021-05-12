@@ -367,7 +367,6 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
     main_df = AvgStrainFitness(exp_used_strains, 
                                t0_used, 
                                all_used_locId,
-      		               genesUsed=genesUsed,
                                mini_debug=1,
                                current_experiment_name=set_index_name,
                                run_typ="main_df",
@@ -379,12 +378,10 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
 
     strainsUsed_now = [bool(all_used_f.iat[i] < 0.5 and all_used_locId.iat[i] in genesUsed12) \
                     for i in range(len(all_used_locId))]
-
     # num rows should be len(genesUsed12)
-    df_1 = AvgStrainFitness(exp_used_strains, 
-                               t0_used, 
-                               all_used_locId,
-      		               strainsUsed=strainsUsed_now, genesUsed=genesUsed12,
+    df_1 = AvgStrainFitness(exp_used_strains[strainsUsed_now], 
+                               t0_used[strainsUsed_now], 
+                               all_used_locId[strainsUsed_now],
                                mini_debug=1,
                                current_experiment_name=set_index_name,
                                run_typ="df_1")
@@ -393,14 +390,13 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
     strainsUsed_now = [bool(all_used_f.iat[i] >= 0.5 and all_used_locId.iat[i] in genesUsed12) \
                     for i in range(len(all_used_locId))]
     # num rows is equal to df_1, should be len(genesUsed12)
-    df_2 = AvgStrainFitness(exp_used_strains, 
-                            t0_used, 
-                            all_used_locId,
-      		            strainsUsed=strainsUsed_now, genesUsed=genesUsed12,
-                            mini_debug=1,
-                            current_experiment_name=set_index_name,
-                            run_typ="df_2",
-                            debug=False)
+    df_2 = AvgStrainFitness(exp_used_strains[strainsUsed_now], 
+                               t0_used[strainsUsed_now], 
+                               all_used_locId[strainsUsed_now],
+                               mini_debug=1,
+                               current_experiment_name=set_index_name,
+                               run_typ="df_2")
+
     del strainsUsed_now
     
     if cdebug:
@@ -472,14 +468,13 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
 def AvgStrainFitness(exp_used_strains, 
                     t0_used, 
                     all_used_locId,
+                    current_experiment_name=None,
 		    minStrainT0 = 4, minGeneT0 = 40,
-		    genesUsed=None, strainsUsed_short=None,
                     minGeneFactorNStrains=3,
                     strainFitAdjust=0,
 		    maxWeight = 20,
 		    debug=False,
                     mini_debug=0,
-                    current_experiment_name=None,
                     run_typ=None):
 
     """
@@ -489,20 +484,13 @@ def AvgStrainFitness(exp_used_strains,
                     end of the experiment condition.
                     Comes from all_df, only counts that have genes. Same length as 
                     t0_used (Reads for this experiment name)
+                    Total length is nAllStrainsCentralGoodGenes* 
         t0_used (Pandas Series <int>): counts for Time0 for each used strain
         all_used_locId (Pandas Series <locusId (str)>): total locusIds of 
                                         all_df - the same for every time 
                                         this function is run. Same length as above two 
-                                        variables (crt_all... , crt_t0_...)
+                                        variables (exp_used_strains, t0_used)
                                         What if no locusId exists for strain?
-                                        
-        genesUsed: list<locusId> where each locusId is a string 
-        strainsUsed_short (list<bool>):  This is a boolean list which decides which strains out of exp_used_strains
-                                    and t0_used we will actually use. 
-                                    When we compute the first and second half
-                                    inserted genes, we need a way to distinguish between them.
-                                    Its length must be the same as the length of crt_all...crt_t0, and all_used
-                                    length = nAllStrainsCentralGoodGenes
         minStrainT0: int
         minGeneT0: int
         maxWeight: int 
@@ -511,8 +499,8 @@ def AvgStrainFitness(exp_used_strains,
 		 # 20 on each side corresponds to a standard error of ~0.5; keep maxWeight low because outlier strains
 		 # often have higher weights otherwise.
 
-        current_experiment_name (str): Name of set index in all.poolcount that
-                                    we are currently analyzing
+        current_experiment_name (str): Name of experiment (set-index), that
+                                        we are currently analyzing
         run_typ (str): Debugging which part of GeneFitness are we running?
                         Fixed options: 'main_df', 'df_1', 'df_2'
 
@@ -558,21 +546,6 @@ def AvgStrainFitness(exp_used_strains,
                 "All lengths must be equal and above 1."
                 )
 
-    # We update the strains that are used (subset of all_df) if we want
-    # to, for example if we only want the strains inserted with f<0.5
-    # The number of True values in strainsUsed_short is nAllStrainsCentralGoodGenes*
-    if strainsUsed_short is not None:
-        if len(strainsUsed_short) != len(exp_used_strains):
-            raise Exception("Somehow length of strainsUsed_short is not the same"
-                            " as length of current all_subset for experiment."
-                            f" The length of strainsUsed_short = {len(strainsUsed_short)}, whereas "
-                            f" the length of current reads is {len(exp_used_strains)}")
-        if run_typ != "main_df":
-            print("nAllStrainsCentralGoodGenes12 = " + str(strainsUsed_short.count(True)))
-        exp_used_strains = exp_used_strains[strainsUsed_short]
-        t0_used = t0_used[strainsUsed_short]
-        all_used_locId = all_used_locId[strainsUsed_short]
-
     # Check if accurate?
     crt_t0_name = t0_used.name
 
@@ -588,72 +561,53 @@ def AvgStrainFitness(exp_used_strains,
     # gene_strain_fit_func. Just a double check
     if sum(t0_used) != 0:
         readratio = exp_used_strains.sum()/t0_used.sum()
+        print(f'readratio: {readratio}')
     else:
-        raise Exception(f"No t0 values for this set/index value: {current_experiment_name}\n"
+        raise Exception(f"No positive t0 values for this set/index value: {current_experiment_name}\n"
                          " Cannot get readratio (Division by 0).")
 
-    if debug:
-        print('readratio:')
-        print(readratio)
     
     # This is where we get strain Fitness (pandas Series) - median normalized log2 ratios between
     # strain and T0 sums. pandas Series whose length is nAllStrainsCentralGoodGenes(*)
     strainFit = getStrainFit(exp_used_strains, t0_used, readratio, debug=True)
-
-
 
     # Per-strain "smart" pseudocount to give a less biased per-strain fitness estimate.
     # This is the expected reads ratio, given data for the gene as a whole
     # Arguably, this should be weighted by T0 reads, but right now it isn't.
     # Also, do not do if we have just 1 or 2 strains, as it would just amplify noise
 
-    '''
-    # nStrains_d is a dict which takes locusIds -> number of times 
-    #   it appears in the list. Ordered_strains is a unique list of strains.
-    nStrains_d, ordered_strains = py_table(list(all_used_locId), return_unique=True)
 
-    # This list below is weird, we only keep the numbers relative to a sorted list of 
-    # unique locusIDS????
-    # Almost the same as R version - what's the difference?
-    nStrains = [nStrains_d[ordered_strains[i]] for i in range(len(ordered_strains))]
-
-    if debug:
-        with open('tmp/py_NStrains.tsv', 'w') as g:
-            g.write(json.dumps(list(nStrains), indent = 2))
-    '''
-
-    # pd.Series length of nGenesUsed* - medians over gene locusIds with insertions
-    # index is locusIds
-    geneFit1 = getGeneFit1(strainFit, all_used_locId, current_experiment_name) 
-
-
-    # Work on understanding below code:
     # strainPseudoCount is a pandas Series, length is nAllStrainsCentralGoodGenes*
+    # 
     strainPseudoCount = getStrainPseudoCount(all_used_locId, 
-                            geneFit1, readratio, minGeneFactorNStrains=minGeneFactorNStrains, 
+                            strainFit, readratio, 
+                            minGeneFactorNStrains=minGeneFactorNStrains, 
                             debug_print_bool=True)
-    
+   
+    # We create strainFit_adjusted
     # length of the following pandas Series is nAllStrainsCentralGoodGenes*
     # Remember no values in strainPseudoCount can be 0, so 1/strainPseudocount.sqrt is fine 
-    condPseudoCount = strainPseudoCount.apply(np.sqrt)
-    t0PseudoCount = 1/condPseudoCount # (This applies to every element in the series)
+    # PC -> PseudoCount
+    expPC = strainPseudoCount.apply(np.sqrt)
+    t0PC = 1/expPC # (This applies to every element in the series)
 
     # place holder for 'strain fit adjusted' values
-    strainFit_adjusted = (condPseudoCount + exp_used_strains).apply(np.log2) \
-                        - (t0PseudoCount + t0_used).apply(np.log2) \
+    strainFit_adjusted = (expPC + exp_used_strains).apply(np.log2) \
+                        - (t0PC + t0_used).apply(np.log2) \
                         - strainFitAdjust
+    del expPC, t0PseudoCount, strainPseudoCount
 
 
     # strain Standard Deviation (list of floats) (We add 1 to avoid division by zero error)
     strainSD = ( (1/(1 + t0_used) + 1/(1 + exp_used_strains)).apply(np.sqrt) )/np.log(2)
-
     
     # Getting strainWeight
     # "use harmonic mean for weighting; add as small number to allow maxWeight = 0."
     s1 = 2/( 1/(1+t0_used) + 1/(1 + exp_used_strains) )
     strainWeight = s1.combine(maxWeight, min, 0)
+    del s1
     num_max_weight = list(strainWeight).count(maxWeight)
-    print(f"{num_max_weight} of the {len(strainWeight)} variables passed" \
+    print(f"{num_max_weight} of the {len(strainWeight)} strainWeights surpassed" \
           f" the max weight of {maxWeight}")
 
     if mini_debug > 1:
@@ -664,11 +618,7 @@ def AvgStrainFitness(exp_used_strains,
                   ["strainWeight.tsvsrs", strainWeight],
                   ["strainFit_adjusted.tsvsrs", strainFit_adjusted],
                   ["strainFit.tsvsrs", strainFit],
-                  ["sf_diff.tsvsrs", strainFit_adjusted - strainFit],
-                  ["t0PseudoCount.tsvsrs", t0PseudoCount],
-                  ["condPseudoCount.tsvsrs", condPseudoCount],
-                  ["strainPseudoCount.tsvsrs", strainPseudoCount],
-                  ["geneFit1.tsvsrs", geneFit1]
+                  ["strainFitDifference.tsvsrs", strainFit_adjusted - strainFit]
                   ]:
             x[1].to_csv("tmp/" + x[0], sep="\t")
         raise Exception("mini_debug>1 so stopping after printing vars")
@@ -714,15 +664,15 @@ def AvgStrainFitness(exp_used_strains,
 
 
 
-def getStrainFit(crt_all_series_hg_su, crt_t0_series_hg_su, readratio,
+def getStrainFit(exp_used_strains, t0_used, readratio,
                  debug=False):
     """
     Args:
         crt... : pandas series with integers. Length is nAllStrainsCentralGoodGenes
         readratio: float
     returns:
-        strainFit (pandas series): of floats length is the same as len(crt_all_series_hg_su) =
-                                                                   len(crt_t0_series_hg_su)
+        strainFit (pandas series): of floats length is the same as len(exp_used_strains) =
+                                                                   len(t0_used)
                                     Normalized log 2 difference between values and time0s
                                     Length is nAllStrainsCentralGoodGenes(*)
                                     (Could be shortened due to having only strains in genesUsed12)
@@ -738,12 +688,11 @@ def getStrainFit(crt_all_series_hg_su, crt_t0_series_hg_su, readratio,
     """
     # use sqrt(readratio), or its inverse, instead of 1, so that the expectation
     # is about the same regardless of how well sampled the strain or gene is
-    # the reason we add the readratio is to make sure there isn't log2(0)
-    all_1 = crt_all_series_hg_su + math.sqrt(readratio)
-    t0_1 = crt_t0_series_hg_su + 1/math.sqrt(readratio)
-    all_2 = all_1.apply(math.log2)
-    t0_2 = t0_1.apply(math.log2)
-    strainFit = mednorm(all_2 - t0_2)
+    exp_1 = exp_used_strains + np.sqrt(readratio)
+    t0_1 = t0_used + 1/np.sqrt(readratio)
+    exp_2 = exp_1.apply(np.log2)
+    t0_2 = t0_1.apply(np.log2)
+    strainFit = mednorm(exp_2 - t0_2)
 
     if debug:
         fn = os.path.join('tmp','strainfit.tsv')
@@ -752,7 +701,7 @@ def getStrainFit(crt_all_series_hg_su, crt_t0_series_hg_su, readratio,
     return strainFit
 
 
-def getGeneFit1(strainFit, good_strainLocusIds, current_experiment_name, print_op=None):
+def getGeneFit1(strainFit, good_strainLocusIds, current_experiment_name=None, print_op=None):
     """
     
     Both of the following inputs have the same length
@@ -772,14 +721,22 @@ def getGeneFit1(strainFit, good_strainLocusIds, current_experiment_name, print_o
                                     which could be the number of genes
                                     in genesUsed or genesUsed12 depending
                                     on if the run is main_df, or df_1/df_2
-                                    Index is the locusId 
+                                    Index is the locusId, so it's locusId -> number.
+                                    Thus we can access its values using locusIds 
+
 
     Description:
         We group the values of strainFit by their locusIds
             in good_strainLocusIds, and calculate the median of each group
             Then we normalize by the median, which means we subtract
             the total median from each value.
-                                
+            We return this pandas Series.
+            Its length will be the number of unique
+            locus Ids in good_strainLocusIds,
+            which could be the number of genes
+            in genesUsed or genesUsed12 depending
+            on if the run is main_df, or df_1/df_2
+            Index is the locusId 
     """
 
     #logging.info(f"Getting geneFit1 for {strainFit.name}")
@@ -791,7 +748,7 @@ def getGeneFit1(strainFit, good_strainLocusIds, current_experiment_name, print_o
     
     # We get the medians over all the strains with the same locusId
     # The index will be the locusIds
-    medians_df = py_aggregate(new_df, 'locusId', func='median')
+    medians_df = new_df.groupby(by='locusId').median()
 
     geneFit1 = mednorm(medians_df[current_experiment_name])
 
@@ -802,7 +759,7 @@ def getGeneFit1(strainFit, good_strainLocusIds, current_experiment_name, print_o
     return geneFit1
 
 
-def getStrainPseudoCount(all_used_locusId, geneFit1, readratio, minGeneFactorNStrains=3, 
+def getStrainPseudoCount(all_used_locusId, strainFit, readratio, minGeneFactorNStrains=3, 
                          debug_print_bool=False):
     """
     Args:
@@ -813,19 +770,29 @@ def getStrainPseudoCount(all_used_locusId, geneFit1, readratio, minGeneFactorNSt
                     Length is nAllStrainsCentralGoodGenes(*)
                     (* Could be shortened due to having only strains in genesUsed12)
         minGeneFactorNStrains: int
-        geneFit1 (pandas Series): median-normalized medians of locusIds over strains,
-                                  length is nGenesUsed or nGenesUsed12.
-                                  NOTE that the index for this series is
-                                  the locusId, so it's locusId -> number.
-                                  Thus we can access its values using locusIds 
-                
+        strainFit (pandas Series <float>): length is same as all_used_locusId
         readratio (float): (sum of counts/ sum of t0 for this sample index)
 
     Returns:
         strainPseudoCount (pandas Series): list of floats, same length as geneFit1,
                                             and we keep the index, being the row 
                                             number from all_df. No values can be 0
+
+    Created vars:
+        geneFitMedians (pandas Series): median-normalized medians of locusIds over values from
+                                  StrainFit.
+                                    Its length will be the number of unique
+                                    locus Ids in all_used_locId,
+                                    which could be the number of genes
+                                    in genesUsed or genesUsed12 depending
+                                    on if the run is main_df, or df_1/df_2
+                                    Index is the locusId, so it's locusId -> number.
+                                    Thus we can access its values using locusIds 
     """
+
+    # pd.Series length of nGenesUsed* - medians over gene locusIds with insertions
+    # index is locusIds. Essentially a dict from locusId to medians over insertions.
+    geneFitMedians = getGeneFit1(strainFit, all_used_locId, current_experiment_name) 
 
     # This 'table; is unique locus Ids pointing to the number of times they occur
     locusId2TimesSeen_d = py_table(all_used_locusId) 
@@ -834,8 +801,10 @@ def getStrainPseudoCount(all_used_locusId, geneFit1, readratio, minGeneFactorNSt
     strainPseudoCount = []
     for locId in all_used_locusId.values:
         if locusId2TimesSeen_d[locId] >= minGeneFactorNStrains:
-            strainPseudoCount.append(2**geneFit1[locId]*readratio)
+            # remember readratio is sum(experiment)/sum(time0s)
+            strainPseudoCount.append(2**geneFitMedians[locId]*readratio)
         else:
+            # Why this?
             strainPseudoCount.append(readratio)
 
     strainPseudoCountSeries = pd.Series(strainPseudoCount, index=all_used_locusId.index)
@@ -933,7 +902,7 @@ def sub_avg_fitness_func(ix_l, strainWeight, strainFit_adjusted,
     # 'simulations with E=10 on each side gave slightly light tails'
     # '(r.m.s.(z) = 0.94).'
 
-    sdNaive = (  (1/(1+tot)) + (1/(1+tot0)) ).apply(np.sqrt)/np.log(2)
+    sdNaive = np.sqrt(  (1/(1+tot)) + (1/(1+tot0)) )/np.log(2)
     
     nEff = total_weight/(strainWeight[ix_l].max())
     ret_d = {
