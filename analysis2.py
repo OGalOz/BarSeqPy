@@ -10,6 +10,25 @@ import math
 import time
 from translate_R_to_pandas import * 
 
+"""
+All functions and subroutines:
+    analysis_2:
+        initialize_gene_fit_d
+        FitReadMetrics
+        FitQuality
+            CrudeOp
+            AdjacentPairs
+            paircor
+        FEBA_Exp_Status
+        normalize_per_strain_values
+            StrainClosestGenes
+                (py_unsplit) from translate_R...
+            create_strain_lrn
+
+"""
+
+
+
 
 def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_list,
                strainsUsed_list, t0tot,
@@ -129,7 +148,7 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     print(f"Time to run FitReadMetrics: {time.time() - st} seconds")
 
     st = time.time()
-    fq_result, CrudeOp_df = FitQuality(gene_fit_d, genes_df, prnt_dbg=True)
+    fq_result, CrudeOp_df = FitQuality(gene_fit_d, genes_df, prnt_dbg=False)
     print(f"Time to run FitQuality: {time.time() - st} seconds")
 
     gene_fit_d['q'] = pd.concat([gene_fit_d['q'], 
@@ -139,7 +158,7 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     #DEBUG:
     gene_fit_d['q'].to_csv("tmp/py_gene_fit_q2.tsv", sep="\t")
     # status is a pandas series of str
-    status = FEBA_Exp_Status(gene_fit_d['q'], dbg_prnt=True)
+    status = FEBA_Exp_Status(gene_fit_d['q'], dbg_prnt=False)
     # We get a list of status is ok + False for the rows of q that surpass length of status
     gene_fit_d['q']['u'] = [status.iat[i] == "OK" for i in range(len(status))] + [False]*(gene_fit_d['q'].shape[0] - len(status))
 
@@ -156,8 +175,9 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     strains = all_df.iloc[:,0:meta_ix]
 
     strains['used'] = strainsUsed_list 
-    strains['enoughT0'] = t0tot[t0tot > minT0Strain].mean()
+    strains['enoughT0'] = t0tot.mean(axis=0) > minT0Strain
     gene_fit_d['strains'] = strains
+
 
     gene_fit_d['strain_lr'] = pd.DataFrame.from_dict(
                             {x: list(GeneFitResults[x]['strain_fit']) for x in GeneFitResults.keys()}
@@ -165,7 +185,8 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     gene_fit_d['strain_se'] = pd.DataFrame.from_dict(
                             {x:list(GeneFitResults[x]['strain_se']) for x in GeneFitResults.keys()}
                             )
-    
+
+     
     strain_lrn, strainToGene = normalize_per_strain_values(strains, genes_df, gene_fit_d)
     gene_fit_d['strain_lrn'] = strain_lrn
     gene_fit_d['strainToGene'] = strainToGene
@@ -236,6 +257,9 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
             tot (int or nan) dataframe with one column per setindexname
             tot0 (int or nan) dataframe with one column per setindexname
             version (str)
+
+    SubRoutines:
+        
         
     """
 
@@ -289,13 +313,15 @@ def FitReadMetrics(all_df, qnames, central_insert_bool_list):
             nMapped
             nPastEnd
             nGenic
+    
+    SubRoutines:
+        
 
     Description:
         Compute read metrics -- nMapped, nPastEnd, nGenic, for the given data columns
         The final argument is used to define genic
 
     """
-    print(all_df.head())
 
     frm_df = pd.DataFrame.from_dict({
         "nMapped": all_df[qnames].sum(axis=0),
@@ -370,6 +396,11 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
         Compute the quality metrics from fitness values, fitness values of halves of genes, or
         counts per gene (for genes or for halves of genes)
 
+
+    SubRoutines:
+        CrudeOp
+        AdjacentPairs
+        paircor
     """
     # crudeOpGenes is a dataframe
     crudeOpGenes = CrudeOp(genes_df)
@@ -377,18 +408,12 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
         crudeOpGenes.to_csv("tmp/py_crudeOpGenes.tsv", sep="\t")
 
     # adj is a dataframe
-    adj = AdjacentPairs(genes_df, dbg_prnt=True)
+    adj = AdjacentPairs(genes_df, dbg_prnt=False)
     adjDiff = adj[adj['strand1'] != adj['strand2']]
     lrn1 = gene_fit_d['lrn1']
     lrn2 = gene_fit_d['lrn2']
 
-    print("-*-*-*" + "Gene fit D of 'g' then genes_df['locusId'] ")
-    print(gene_fit_d['g'])
-    print(genes_df['locusId'])
     match_list = py_match(list(gene_fit_d['g']), list(genes_df['locusId']))
-    print(match_list)
-
-    print(len(match_list))
 
     #GC Correlation is the correlation between the fitnorm values and the GC values
     GC_Corr = gene_fit_d['lrn'].corrwith(genes_df['GC'].iloc[match_list], method="pearson")
@@ -428,8 +453,8 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
                   gene_fit_d['g'], 
                   gene_fit_d['lrn'][colname], 
                   method="spearman",
-                  dbg_prnt=True) for colname in gene_fit_d['lrn']], 
-        "adjcor": [paircor(adjDiff, gene_fit_d['g'], gene_fit_d['lrn'][colname], method="spearman", dbg_prnt=True)\
+                  dbg_prnt=False) for colname in gene_fit_d['lrn']], 
+        "adjcor": [paircor(adjDiff, gene_fit_d['g'], gene_fit_d['lrn'][colname], method="spearman", dbg_prnt=False)\
                     for colname in gene_fit_d['lrn']],
         "gccor":  GC_Corr,
         "maxFit": gene_fit_d['lrn'].max()
@@ -603,6 +628,8 @@ def paircor(pairs, locusIds, values, use="p", method="pearson", names=["Gene1","
     names (list<str>): "Gene1", "Gene2"
     dbg_prnt (bool)
 
+    Description:
+
     """
     if dbg_prnt:
         print(f"Length of locusIds: {len(locusIds)}")
@@ -657,10 +684,13 @@ def normalize_per_strain_values(strains, genes_df, gene_fit_d):
     """
     Args:
         strains: all_df dataframe but just the metadata columns
+                plus a column called 'used' which is StrainsUsed (boolean)
+                and a column called enoughT0 which is also boolean
+                testing if the means of the t0tot rows are big enough
         genes_df: Dataframe of genes.GC file
         gene_fit_d:
             'g': pandas Series of locusIds (str)
-            'strain_lr':
+            'strain_lr': Length of this is nUsefulReads < nTotalReads ( = rows of all_df)
             'lrn':
             'lr':
             'strains':
@@ -668,23 +698,31 @@ def normalize_per_strain_values(strains, genes_df, gene_fit_d):
 
     Returns:
         strain_lrn (pandas DataFrame): Normalized FitNorm values (?)
+    
+    SubRoutines:
+        StrainClosestGenes
+        create_strain_lrn
+
+    Description:
+        
         
     """
 
     # strainToGene is pandas Series that has same length as num strains, 
     # and in which each index points to closest gene index by location
+    included_genes = [bool(x in gene_fit_d['g'].values) for x in genes_df['locusId'].values]
+    reshuffled_genes = genes_df[included_genes].reset_index()
+    print(reshuffled_genes)
     strainToGene = StrainClosestGenes(strains, 
-                                      genes_df.iloc[py_match(list(gene_fit_d['g']), 
-                                                    list(genes_df['locusId']))].reset_index(),
+                                      reshuffled_genes,
                                       dbg_prnt=True)
-
 
     # Subtract every value from log ratio normalized matrix by log ratio values.
     dif_btwn_lrn_and_lr = gene_fit_d['lrn'] - gene_fit_d['lr']
     strain_lrn = create_strain_lrn(gene_fit_d['strain_lr'], 
                                    dif_btwn_lrn_and_lr,
-                                   gene_fit_d, strainToGene)
-
+                                   strains, strainToGene,
+                                   dbg_print=True)
 
     return strain_lrn, strainToGene
 
@@ -698,7 +736,8 @@ def StrainClosestGenes(strains, genes, dbg_prnt=False):
                 used: pandas Series(list<bool>): whose length is same as num of Trues in central_insert_bool_list
                 enoughT0: Means of a subset of t0tots who pass the minT0 test.
         genes (pandas DataFrame): same as genes_df, but with a switched order of locusIds. 
-                                  Contains same columns as genes.GC
+                                Needs to have columns: 
+                                    scaffoldId, begin, end
 
     Intermediate Vars:
         indexSplit (python dict): group_label (scaffoldId) -> list of values (int or np.nan)
@@ -708,29 +747,115 @@ def StrainClosestGenes(strains, genes, dbg_prnt=False):
                         the closest gene from 'genes', by taking halfway between each gene's beginning
                         and ending position and comparing it to the position of the strain barcode insertion.
     Description:
-        For each strain (barcode in all.poolcount), find the closest gene, as a row number from genes.GC 
+        For each strain (barcode in all.poolcount), find the closest gene, as an index label from 
+        'genes' dataframe.
         returns a list, same length as strain, with corresponding strain rows -> closest row within genes
         If there is no gene on that scaffold, returns NA.
 
+    SubRoutines:
+        py_unsplit
+
     * Below can be optimized with multithreading
     """
-
+    
+    # A list of integers parallel to rows of genes_df
     genes_index = list(range(0, genes.shape[0]))
-    # Are these like dicts -> lists (?)
-    strainSplit = strains.groupby(by=strains['scaffold']).groups
 
-    if dbg_prnt:
-        print("strainSplit")
-        print(strainSplit)
-    geneSplit = genes.groupby(by=genes['scaffoldId']).groups
-    if dbg_prnt:
-        print("geneSplit")
-        print(geneSplit)
+    # Below are both numpy arrays
+    unq_strain_scaffolds = strains['scaffold'].unique()
+    unq_gene_scaffolds = genes['scaffoldId'].unique()
+
+    # Below are both pandas groupby objects
+    strainGroupBy = strains.groupby(by='scaffold')
+    geneGroupBy = genes.groupby(by='scaffoldId')
 
     indexSplit = {}
-    for scaffoldId in strainSplit:
+    # We iterate over the unique scaffold Ids from 'strains'
+    for scaffoldId in unq_strain_scaffolds:
+        crnt_scf_df = strainGroupBy.get_group(scaffoldId)
+        if scaffoldId not in unq_gene_scaffolds:
+            crnt_genes_df = pd.DataFrame()
+        else:
+            crnt_genes_df = geneGroupBy.get_group(scaffoldId)
+
+        nGenes_rows = crnt_genes_df.shape[0]
+        nStrains_rows = crnt_scf_df.shape[0]
+        if  nGenes_rows == 0:
+            indexSplit[scaffoldId] = [np.nan]*nStrains_rows
+        elif nGenes_rows == 1:
+            indexSplit[scaffoldId] = [geneGroupBy.groups[scaffoldId][0]]*nStrains_rows
+        else:
+            # We get the centers of all the genes
+            crnt_genes_df['pos'] = (crnt_genes_df['begin'] + crnt_genes_df['end']) / 2
+
+            # Now we find the location of the strain and capture the closest gene center
+            # This is the part that could be multithreaded/ sorted
+            crnt_scaffold_list = []
+            if dbg_prnt:
+                print(f"Now finding closest gene for {crnt_scf_df.shape[0]} values")
+            count = 0
+
+            print(f"Starting to find strain closest genes for scaffold: {scaffoldId}")
+            total_rows = crnt_scf_df.shape[0]
+            time_stamp = time.time()
+            # ix is an int
+            for ix, row in crnt_scf_df.iterrows():
+                if ix % 5000 == 0 and int(ix) != 0:
+                        rows_remaining = total_rows - ix
+                        amount_5000_left = rows_remaining/5000
+                        print(f"Currently at count {ix} in Strain Closest Genes for"
+                              f" scaffoldId {scaffoldId}.\n"
+                              f"Number of rows remaining: {rows_remaining}.\n"
+                              f"Time Remaining: {(time.time() - time_stamp)*amount_5000_left}"
+                                " seconds.\n")
+                        time_stamp = time.time()
+
+                gene_pos_minus_strain_pos = (crnt_genes_df['pos'] - row['pos']).abs()
+                # we get the index of the minimum value
+                crnt_scaffold_list.append(int(gene_pos_minus_strain_pos.idxmin()))
+            print("Done finding closest genes to strains.")
+        
+            if dbg_prnt:
+                with open("tmp/py_crnt_scaffold_list.json", "w") as g:
+                    g.write(json.dumps([int(x) for x in crnt_scaffold_list], indent=2))
+
+            indexSplit[scaffoldId] = crnt_scaffold_list
+    
+    new_indexSplit = {}
+    for key, vals in indexSplit.items():
+        new_indexSplit[key] = [None if val==np.nan else val for val in vals]
+    indexSplit = new_indexSplit
+        
+
+    if dbg_prnt:
+        with open("tmp/py_indexSplit.json", 'w') as g:
+            g.write(json.dumps(indexSplit, indent=2))
+    
+    # py_unsplit returns Series
+    recombined_series = py_unsplit(indexSplit, strains['scaffold']) 
+    if dbg_prnt:
+        recombined_series.to_csv("tmp/py_recombined_series.tsv", sep="\t")
+
+    return recombined_series
+
+
+    '''
+    # strainSplit and geneSplit is a dict mapping unique_value -> index labels
+    strainSplit = strains.groupby(by=['scaffold']).groups
+    geneSplit = genes.groupby(by=genes['scaffoldId']).groups
+
+    indexSplit = {}
+    # We iterate over the unique scaffold Ids in the dict strains
+    for scaffoldId in strainSplit.keys():
         s = strains.loc[strainSplit[scaffoldId]]
-        g = genes.loc[geneSplit[scaffoldId]]
+
+        if scaffoldId not in geneSplit:
+            # We make an empty dataframe
+            g = pd.DataFrame()
+        else:
+            # We get the dataframe from genes
+            g = genes.loc[geneSplit[scaffoldId]]
+
         if g.shape[0] == 0:
             indexSplit[scaffoldId] = [np.nan]*len(s)
         elif g.shape[0] == 1:
@@ -751,10 +876,10 @@ def StrainClosestGenes(strains, genes, dbg_prnt=False):
             total_rows = s.shape[0]
             time_stamp = time.time()
             for ix, row in s.iterrows():
-                if count % 5000 == 0 and count != 0:
-                        rows_remaining = total_rows - count
+                if ix % 5000 == 0 and count != 0:
+                        rows_remaining = total_rows - ix
                         amount_5000_left = rows_remaining/5000
-                        print(f"Currently at count {count} in Strain Closest Genes for"
+                        print(f"Currently at count {ix} in Strain Closest Genes for"
                               f" scaffoldId {scaffoldId}.\n"
                               f"Number of rows remaining: {rows_remaining}.\n"
                               f"Time Remaining: {(time.time() - time_stamp)*amount_5000_left}"
@@ -764,7 +889,6 @@ def StrainClosestGenes(strains, genes, dbg_prnt=False):
                 gene_pos_minus_strain_pos = (g['pos'] - row['pos']).abs()
                 # we get the index of the minimum value
                 crnt_scaffold_list.append(gene_pos_minus_strain_pos.idxmin())
-                count += 1
             print("Done finding closest genes to strains.")
             
             if dbg_prnt:
@@ -780,47 +904,80 @@ def StrainClosestGenes(strains, genes, dbg_prnt=False):
         recombined_series.to_csv("tmp/py_recombined_series.tsv", sep="\t")
 
     return recombined_series
+    '''
 
 
-def create_strain_lrn(sfit, gdiff, gene_fit_d, strainToGene, dbg_print=False):
+def create_strain_lrn(strain_lr, gdiff, strains, strainToGene, dbg_print=False):
     """ We normalize per strain values?
     Args:
-        sfit:  
+        strain_lr:  
             (comes from strain_lr) (float): dataframe with one column per setindexname
+                Num rows is nUsefulReads, which is less than nAllStrains len(all_df)
         gdiff:  dataframe (float) with one column per setindexname (same length as main_df-
                                 which is equivalent to the number of unique locusIds that are used)
+                                (lrn - lr)
         strainToGene pandasSeries<index>: For each strain, the index of the closest
-                                            gene center
-        gene_fit_d: requires keys:
-            'strains', and under this, key:
-                'scaffold'
+                                            gene center. Length of all_df
+        strains: all_df dataframe but just the metadata columns. Needs column 'scaffold'
     Returns:
         pandas DataFrame
     """
 
     if dbg_print:
         print("Creating strain_lrn (strain log ratios normalized).")
-        print(sfit)
+        print("strain_lr")
+        print(strain_lr)
+        print("gdiff")
         print(gdiff)
-  
+        print("strains")
+        print(strains)
+        print("strainToGene")
+        print(strainToGene)
+ 
 
     results = {}
-    # We iterate over every column in both dataframes sfit & gdiff
-    for i in range(len(sfit.columns)):
-        sfit_set_index_name = list(sfit.columns)[i]
+    tot_num_cols = len(strain_lr.columns)
+    # We iterate over every column in both dataframes strain_lr & gdiff
+    for i in range(tot_num_cols):
+        strain_lr_set_index_name = list(strain_lr.columns)[i]
+        print(f"Currently working on column {strain_lr_set_index_name}, {i}/{tot_num_cols}")
         gdiff_set_index_name = list(gdiff.columns)[i]
-        if sfit_set_index_name != gdiff_set_index_name:
-            raise Exception("Columns not matching each other.")
-        sfit_col = sfit[sfit_set_index_name]
+        if strain_lr_set_index_name != gdiff_set_index_name:
+            raise Exception("Columns are not matching each other."
+                            f" {strain_lr_set_index_name} != {gdiff_set_index_name}")
+        strain_lr_col = strain_lr[strain_lr_set_index_name]
         gdiff_col = gdiff[gdiff_set_index_name]
         
         # What happens here ??
-        sdiffGene = gdiff_col[strainToGene]
-        grouped_sfit = dict(sfit_col.groupby(by=gene_fit_d['strains']['scaffold']).groups)
-        sdiffSc = [(-1*sfit_col[grouped_sfit[group_label]].median() ) \
-                        for group_label in grouped_sfit]
-        sdiff = sdiffSc if sdiffGene is None else sdiffGene
-        results[sfit_set_index_name] = sfit_col + sdiff
+        # Here we want to copy each value from the gdiff_col,
+        # and create a Series the length of all_df
+        sdiffGene = [gdiff_col.iat[strainToGene.iat[j]] for j in range(len(strainToGene.values))]
+        # Does this require all values in strains['scaffolds'] to be in strain_lr_col?
+        grouped_strain_lr = dict(strain_lr_col.groupby(by=strains['scaffold']).indices)
+
+        # We want the median to be the same for every value under a group
+        # of indices
+        sdiffSc_d = {}
+        for group_label, indices in grouped_strain_lr.items():
+            current_median = strain_lr_col.iloc[indices].median()
+            if dbg_print:
+                for ix in indices:
+                    if ix in sdiffSc_d:
+                        raise Exception("Reoccuring index value (?)")
+                    sdiffSc_d[ix] = -1*current_median
+            else:
+                for ix in indices:
+                    sdiffSc_d[ix] = -1*current_median
+
+        sdiffSc = [sdiffSc_d[j] for j in sorted(sdiffSc_d.keys())]
+        sdiffSc = pd.Series(sdiffSc, index = sorted(sdiffSc_d.keys()))
+
+        print(len(sdiffGene))
+        print(len(sdiffSc))
+        sdiff = [sdiffSc[j] if pd.isnull(sdiffGene[j]) else sdiffGene[j] \
+                 for j in sdiffSc.index]
+        # You can add a series and a list vectorwise, but will make sdiff a series anyways:
+        results[strain_lr_set_index_name] = strain_lr_col + pd.Series(sdiff)
 
     return pd.DataFrame.from_dict(results)
 

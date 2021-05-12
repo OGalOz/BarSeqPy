@@ -71,7 +71,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         # Part 1 - Data Preparation 1
         res_dp1 = data_prep_1(data_dir,
                           FEBA_dir, 
-                          debug_bool=debug_bool,
+                          debug_bool=False,
                           meta_ix=meta_ix)
 
         exps_df, all_df, genes_df, genesUsed_list, ignore_list = res_dp1
@@ -98,13 +98,13 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
     
         all_df, exps_df, genes_df, genesUsed_list = res_dp2[0]
         strainsUsed_list, genesUsed_list12, t0_gN, t0tot = res_dp2[1]
-        central_insert_bool_list, expsT0 = res_dp2[2]
+        central_insert_bool_list, expsT0, num_vars_d = res_dp2[2]
         breakpoint2("tmp/BP2", genesUsed_list, 
                 strainsUsed_list, genesUsed_list12, 
                 t0_gN, t0tot, central_insert_bool_list,
                 all_df, exps_df, genes_df,
-                expsT0)
-
+                expsT0, num_vars_d)
+        stop(107)
     if start_point <= 3:    
         if start_point == 3:
             res_from_dir = import_start_point3_data_from_dir("tmp/BP2")
@@ -716,7 +716,7 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
 def breakpoint2(op_dir, genesUsed, 
                 strainsUsed, genesUsed12, 
                 t0_gN, t0tot, central_insert_bool_list,
-                all_df, exps_df, genes_df, expsT0):
+                all_df, exps_df, genes_df, expsT0, num_vars_d):
     """
     """
     if not os.path.isdir(op_dir):
@@ -727,7 +727,8 @@ def breakpoint2(op_dir, genesUsed,
               ["strainsUsed.json", strainsUsed],
               ["genesUsed12.json", genesUsed12],
               ["central_insert_bool_list.json", central_insert_bool_list],
-              ["expsT0.json", expsT0]
+              ["expsT0.json", expsT0],
+              ["num_vars_d", num_vars_d]
               ]:
         with open(os.path.join(op_dir, x[0]), 'w') as g:
             g.write(json.dumps(x[1], indent=2))
@@ -1087,12 +1088,13 @@ def export_or_import_genefitresults(genefitresults, typ, dir_path, dbg_print=Fal
             ret_d['gene_fit'] = pd.read_table(
                                     os.path.join(dir_path, "py_" + setindexname + "_gene_fit.dftsv"),
                                         dtype=input_d, index_col=0)
+            # These are pandas Series, so we need to take the column
             ret_d['strain_fit'] = pd.read_table(
                                 os.path.join(dir_path, "py_" + setindexname + "_strain_fit.dftsv"),
-                                index_col=0)
+                                index_col=0)['0']
             ret_d['strain_se'] = pd.read_table(
                                 os.path.join(dir_path, "py_" + setindexname + "_strain_se.dftsv"),
-                                index_col=0)
+                                index_col=0)['0']
             genefitresults[setindexname] = ret_d
 
         return genefitresults

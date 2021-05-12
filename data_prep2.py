@@ -48,20 +48,20 @@ def data_prep_2(exps_df, all_df, genes_df,
 
     expsT0, exps_df = update_expsT0_and_exps_df_with_nont0sets(expsT0, 
                                     exps_df, okLane, okDay,
-                                    print_bool=True,
-                                    dbgp=True)
+                                    print_bool=False,
+                                    dbgp=False)
 
     # Here we combine the date set names that are t0 experiments into a single
     # dataframe called t0tot, which has the same number of rows as all.poolcount
     # But only has one column for each date, and all the experiments associated with
     # that date and are t0 sets are summed up.
-    t0tot = create_t0tot(expsT0, all_df, dbg_prnt=True)
+    t0tot = create_t0tot(expsT0, all_df, dbg_prnt=False)
 
     # All the locusIds from all_df which include central insertions (many repeats) 
     indexBy = createIndexBy(all_df, central_insert_bool_list)
 
 
-    t0_gN = createt0gN(t0tot, central_insert_bool_list, indexBy, debug_print_bool=True) 
+    t0_gN = createt0gN(t0tot, central_insert_bool_list, indexBy, debug_print_bool=False) 
 
 
     # strainsUsed will be a list of booleans with length being
@@ -95,12 +95,31 @@ def data_prep_2(exps_df, all_df, genes_df,
 
     check_if_every_t0set_is_in_t0tot(exps_df, t0tot)
 
+    # We update strainsUsed_list to only include strains that were inserted
+    # in genes that are used (in genesUsed_list)
+    all_df_locusIds = all_df['locusId']
+    strainsUsed_list_new = []
+    for i in range(len(strainsUsed_list)):
+        strainsUsed_list_new.append(bool(strainsUsed_list[i] and \
+                                        (all_df_locusIds.iloc[i] in genesUsed_list)))
 
+
+    # Important numerical variables:
+    num_vars_d = {
+            "nAllStrains": all_df.shape[0],
+            "nAllStrainsCentral": central_insert_bool_list.count(True),
+            "nAllStrainsCentralGoodGenes": strainsUsed_list_new.count(True),
+            "nTotalGenes": genes_df.shape[0],
+            "nGenesUsed": len(genesUsed_list),
+            "nGenesUsed12": len(genesUsed_list12),
+            "nExperiments": exps_df.shape[0],
+            "nSetIndexToRun": len(all_df.columns[meta_ix:])
+    }
 
 
     return [[all_df, exps_df, genes_df, genesUsed_list], 
             [strainsUsed_list, genesUsed_list12, t0_gN, t0tot],
-            [central_insert_bool_list, expsT0]]
+            [central_insert_bool_list, expsT0, num_vars_d]]
 
 
 

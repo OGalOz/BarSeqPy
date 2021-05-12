@@ -1,6 +1,15 @@
+    TODO:
+        Run . testPy.sh 4
 
-    
-    Issues:
+        How do you explain the whole 'strain Pseudo Count' and strainFit Weight
+               etc from analysis1 ?? 
+
+        Why are lr and lrn exactly the same? (from BP4?)
+        Why do they start so low down the number of genes?
+
+        Get examples of intermediate variables in AvgStrainFitness, StrainPseudoCount, etc.
+        strain_lr is not completely empty
+        'normalize_per_strain_values' doesn't make sense (analysis2)
         strain_lrn is not returning any results
             Where is strain_lrn being computed?
                 At function create_strain_lrn in analysis2
@@ -8,11 +17,98 @@
         specphe (specific phenotypes) and cofit not being computed (analysis3)
         No description for NormalizeByScaffold in analysis1
 
+        Ask meaning of function:
+        getStrainPseudoCount
+    
+    Vocabulary:
+        exp_name: Experiment name, string, like 'set2IT008' the name of a specific experiment.
+        SetName: Like 'set2', a more general collection of experiments, within which indexes 
+                 define experiments.
+        Date: The day on which an experiment may have occured
+        Strain: associated with a row in all.poolcount, this refers to a unique mutation
+                in the DNA of an organism, in that it had a transposon insertion.
+                Each barcode and location is essentially a 'strain', and the number
+                of times that strain appears is correlated with the number of
+                reads found.
+
+    Function Descriptions:
+        create_strain_lrn: 
+            We take the strain log ratios, which are created in the function 
+            'StrainFitness' from analysis1 and we normalize them by finding
+            the median over all the values from the same scaffolds and
+            subtracting that from the log ratios.
+            We also take a dataframe that is the gene log ratios - gene
+            normalized log ratios, and if those exist at a read, then
+            we subtract those instead of the median.
+
+        AvgStrainFitness: Done for each experiment_name
+            We take three main input variables:
+                1. exp_used_strains: The used reads values from all_df, 
+                    it is a pandas Series of values, whose index is the row number
+                    from all.poolcount where it originated.
+                2. t0_used: The sum of the t0 reads for this experiment,
+                    taken from all_df, and summed over the columns whose
+                    experiments are associated with the t0 value for
+                    this experiment_name. This is also a pandas Series,
+                    whose  indexes are exactly the same as for exp_used_strains.
+                3. all_used_locId: The associated locusIds for the above
+                    two pandas Series,
+                    
+
+            Within this function we create the following variables:
+                strainWeight, strainFit_adjusted, strainSD.
+
+                    strainWeight: comes from t0_used, and exp_used_strains
+                    strainFit_adjusted: comes from t0_used, exp_used_strains,
+                                        condPseudoCount, and t0PseudoCount.
+                                        condPseudoCount and t0PseudoCount
+                                        come from strainPseudoCount,
+                                        which comes from geneFit1 and readratio,
+                                        geneFit1 comes from strainFit,
+                                        which is the simple computation
+                                        you'd expect the program to do.
+                                        
+
+
+
+    Main Variables:
+        strainsUsed:
+            list<bool> Length of all_df which decides which of the 'strains'
+            we actually use. Must pass two qualifications:
+            The mean of the t0tot over the strain has to pass a threshold 
+                'minT0Strain'
+            The insertion location of the strain has to be between 0.1 and 0.9
+            of a gene.
+
+        What are main lengths and how do they relate to lengths of input variables?
+        Main lengths:
+            nAllStrains = number of rows ( all.poolcount )
+            nAllStrainsCentral = number of rows in all.poolcount with 0.1<f<0.9
+            nAllStrainsCentralGoodGenes = number of rows in all.poolcount with 0.1<f<0.9
+                                          AND all locusIds are in the list 'GenesUsed'
+                                            (27659 in Keio) - also known as nUsefulReads
+
+            nAllStrainsCentralGoodGenes* = number of rows in all.poolcount with 0.1<f<0.9
+                                          AND all locusIds are in the list 'GenesUsed12'
+                                            (27659 in Keio) - also known as nUsefulReads
+            nTotalGenes = number of rows (genes.GC)
+            nGenesUsed = (len(genesUsed)) number of rows in genes.GC that we actually use
+                        which is equivalent to the number of unique genes
+                        that have good insertions in them. (1355 in Keio)
+            nGenesUsed12 = (len(genesUsed12)) number of locusIds with a good amount of 
+                            insertions in both halves of 'f' from all_df. Both df1 and df2 
+                            in GeneFitness() have this number of rows.
+            nGenesUsed* = either nGenesUsed or nGenesUsed12
+            nExperiments = number of rows in experiments file
+    
+
     Questions:
         Why are we normalizing by scaffold?
         There are issues with some outputs: fit_log_ratios_unnormalized_naive:
             The dataframe isn't combined, it's just two dataframes stacked on top of 
             one another.
+        What does get StrainPseudoCount do?
+        What does AvgStrainFitness do?
 
 
     Outputs:
@@ -97,6 +193,21 @@
                 t0set (str): A date which refers to the time0 to which we compare this one 
         
 
+    
+    Breakpoint Outputs Explained:
+        BP3:
+            gene_fit:
+                Number of rows = length of genesUsed as input to analysis1
+
+        GeneFitResults:
+            For each experiment name, there are 3 different important variables:
+               gene_fit, strain_fit, strain_se
+            
+            The length of gene_fit is nGenesUsed
+            The length of strain_fit is  nAllStrainsCentralGoodGenes (nUsefulReads)
+
+
+
 
 
     Program is divided into 7 phases:
@@ -112,6 +223,16 @@
 
 
     Requirements:
+        Inputs:
+            all.poolcount: List of 'strains'. If a transposon was inserted inside a gene,
+                then the field locusId will no longer be empty, and the field 'f' will no
+                longer be empty, since 'f' measures the fraction of the gene in which
+                the transposon was inserted, i.e. if it was inserted in the 25th% of
+                the gene in terms of length, then its 'f' would be 0.25.
+                For each identifier for an experiment, we count the number of times
+                that strain appears.
+
+
         
        All the locusIds in all.poolcount have to exist in the genes file (genes.GC)
 

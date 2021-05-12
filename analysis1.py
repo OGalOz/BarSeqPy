@@ -22,7 +22,35 @@ def analysis_1(all_df, exps_df, genes_df,
                genesUsed, genesUsed12, strainsUsed, central_insert_bool_list, 
                minGenesPerScaffold=10, meta_ix=7,debug=False, nDebug_cols=None):
     """
+    Questions: is all_df at all modified? 
+    exps_df has modified column names right?
+    genes_df modified?
 
+    Args:
+        all_df: The all.poolcount complete table (no removals)
+        expsT0:
+            dict {t0_date -> list experiment_names}
+        t0tot:
+            dataframe cols (same str as expsT0 keys)
+            num rows the same as all_df
+            each row is a sum of all_df over the related T0 vals (from expsT0)
+        genesUsed:
+            list<locusIds (str)> whose length defines the size of the dataframes
+                created in the future.
+        genesUsed12:
+           list<locusIds (str)>  a more stringent list of locusIds- they have to have
+                                an abundant enough number of strains in the first
+                                AND second half (0.1<f<0.5 & 0.5<f<0.9)
+        strainsUsed:
+            list<bool> Length of all_df which decides which of the 'strains'
+            we actually use. Must pass two qualifications:
+            The mean of the t0tot over the strain has to pass a threshold 
+                'minT0Strain'
+            The insertion location of the strain has to be between 0.1 and 0.9
+            of a gene.
+            It also only includes strains with locusIds that
+            are in genesUsed
+        central_insert_bool_list (list<bool>): 
 
     Returns:
         GeneFitResults: (dict) set_index_names -> gene_strain_fit_result
@@ -37,30 +65,40 @@ def analysis_1(all_df, exps_df, genes_df,
 
     # The bulk of the program occurs here: We start computing values
     GeneFitResults = {}
-    all_index_names = list(all_df.head())[meta_ix:]
+    all_index_names = list(all_df.columns)[meta_ix:]
+    nAllStrainsCentralGoodGenes = list(strainsUsed).count(True)
+    if nAllStrainsCentralGoodGenes == 0:
+        raise Exception("After data preparing, no usable strains are left.")
+    print(f"nAllStrainsCentralGoodGenes: {nAllStrainsCentralGoodGenes}")
 
-    strainsUsed_hg2 = pd.Series(data=[bool(strainsUsed[i]) for i in range(len(strainsUsed)) if central_insert_bool_list[i]],
-                                index=[i for i in range(len(strainsUsed)) if central_insert_bool_list[i]])
-    all_df_central_inserts = all_df[central_insert_bool_list]
-    num_ix_remaining = len(all_index_names)
-    print(f"{num_ix_remaining}/{len(all_index_names)} total indeces to run through")
+    # length of these two dataframe is nAllStrainsCentralGoodGenes
+    # all_df_used are the original strains that we are using
+    # t0tot_used are the t0total sums over those same strains
+    all_df_used = all_df[strainsUsed]
+    t0tot_used = t0tot[strainsUsed]
+
 
     # We take all the index names without the meta indeces (0-meta_ix (int))
     nSetIndexToRun = len(all_index_names) if nDebug_cols == None else nDebug_cols
+    num_ix_remaining = nSetIndexToRun
+    # use1 refers to the strains inserted in the first half of the gene
+    use1 = [bool(x < 0.5) for x in all_df_used['f']]
 
+    print(f"Running through {num_ix_remaining}/{len(all_index_names)} indices")
     for set_index_name in all_index_names[:nSetIndexToRun]:
         print(f"Currently working on index {set_index_name}")
         
         start_time = time.time()
         if set_index_name is not None:
-            exp_reads_w_central_insertions = all_df_central_inserts[set_index_name]
+            # We choose the right column
+            exp_used_strains = all_df_used[set_index_name]
             gene_strain_fit_result = gene_strain_fit_func(set_index_name, 
-                                                          exps_df, exp_reads_w_central_insertions, 
+                                                          exps_df, exp_used_strains, 
                                                           genes_df, expsT0,
-                                                          t0tot, strainsUsed_hg2, central_insert_bool_list,
+                                                          t0tot_used, 
                                                           genesUsed, genesUsed12, minGenesPerScaffold,
-                                                          all_df_central_inserts,
-                                                          all_df)
+                                                          all_df_used,
+                                                          use1)
             if gene_strain_fit_result is not None:
                 GeneFitResults[set_index_name] = gene_strain_fit_result
             else:
@@ -83,53 +121,55 @@ def analysis_1(all_df, exps_df, genes_df,
 
 
 
-def gene_strain_fit_func(set_index_name, exps_df, exp_reads_w_central_insertions, 
+def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains, 
                          genes_df, expsT0,
-                         t0tot, strainsUsed_hg2, central_insert_bool_list,
+                         t0tot_used, 
                          genesUsed, genesUsed12, minGenesPerScaffold,
-                         all_df_has_gene,
-                         all_df
+                         all_df_used, use1
                          ):
     """
     Description:
         This function is run for every single set_index_name in all_df, and that set_index_name
         is passed into this function as the first argument, 'set_index_name'. All other arguments
         are not changed at all when this function is called and are documented elsewhere. 
-        Note that all_df_has_gene is a subset
+        Note that all_df_used is a subset
         of all_df (all.poolcount) in which the barcode was inserted within a gene and within the
-        central 80% of the gene. Then the majority of the work of the function is done within
+        central 80% of the gene and the locusId is found in genesUsed. There may be other thresholds.
+        t0tot_used has the exact same number of rows as all_df_used.
+
+        Then the majority of the work of the function is done within
         creating the variable 'gene_fit' while calling the function 'GeneFitness'.
 
-    What happens in this function?
-        First we find if this value is part of a t0set.
-        If not, we get the related t0 set.
+        What happens in this function?
+            First we find if this value is part of a t0set.
+            If not, we get the related t0 set.
+
         
     Args:
         set_index_name: (str) Name of set and index from all_df (all.poolcount file)
 
         exps_df: Data frame holding exps file (FEBABarSeq.tsv)
 
-        exp_reads_w_central_insertions: pandas Series of this set_index_name from all.poolcount
-                                        with only values that have central insertions.
+        exp_used_strains: pandas Series of this set_index_name from all.poolcount
+                                        with only values related to useful reads.
+                                        Length is nAllStrainsCentralGoodGenes 
 
-        [all_df]: Data frame holding all.poolcount file
+        [all_df_used]: Subset of the Data frame holding all.poolcount file with only the reads
+                        that passed multiple threshold tests (Length is nAllStrainsCentralGoodGenes)
         genes_df: Data frame holding genes.GC table
-        expsT0: (dict) mapping (date setname) -> list<set.Index>
-        t0tot: data frame where column names are 'date setname'
-                and linked to a list of sums over the indexes that relate
-                to that setname, with the list length being equal to the
-                total number of strains (barcodes) in all.poolcount
-                all columns are t0's?
-        strainsUsed_hg2 pandas Series(list<bool>): whose length is same as num of Trues in central_insert_bool_list
-                        equivalent index to central_insert_bool_list True values
-        central_insert_bool_list: list<bool> whose length is total number of strains.
-                    row with strains that have gene insertions between
-                    0.1 < f < 0.9 hold value True
+        expsT0: (dict) mapping (date setname) -> list<experiment_name (str)>
+        t0tot_used: data frame where column names are 'date setname'
+                and linked to a list of sums over the indexes that relate 
+                to that setname, (Length is nAllStrainsCentralGoodGenes) 
+
         genesUsed: list<locusId> where each locusId is a string
         genesUsed12 (list<str>): list of locusIds that have both high f (>0.5) and low f (<0.5)
                     insertions with enough abundance of insertions on both sides
         minGenesPerScaffold: int
-        all_df_has_gene (Dataframe): The parts of all_df that corresponds to True in central_insert_bool_list
+        all_df_central_inserts (Dataframe): The parts of all_df that corresponds to True in central_insert_bool_list
+                                            Num rows is nAllStrainsCentral 
+        use1: boolean list for the all_df_used with 0.1 < f <0.5 is True, otherwise false,
+                Length is nAllStrainsCentralGoodGenes
 
     Created vars:
         to_subtract: a boolean which says whether the 'short' name
@@ -137,7 +177,8 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_reads_w_central_insertions
         t0set: Setname of related t0 set to current index name
         all_cix: The all_df column which is related to the current set_index_name
             (Should be a panda series)
-        t0_series = 
+        t0_series = the series from t0tot_used that is the current Time0 sums for each
+                    strain
 
     Returns:
         returns None if there are no t0 values for it. Otherwise returns ret_d
@@ -150,51 +191,55 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_reads_w_central_insertions
             strain_se: pandas Series (float) with a computation applied to values
 
     """
+    # t0set is a string, to_subtract is a bool depending on if this set has short Time0
     t0set, to_subtract = get_t0set_and_to_subtract(set_index_name, exps_df)
 
-    # t0_series is the related time 0 total series.
-    t0_series = t0tot[t0set]
+    # t0_used is the related time 0 total series.
+    t0_used = t0tot_used[t0set]
 
     # to_subtract is true if this is a time zero itself, so we remove
     # its values from the other time0 values.
     if to_subtract:
         # We subtract the poolcount values from the t0 totals 
-        t0_series = t0_series - exp_reads_w_central_insertions 
+        t0_used = t0_used - exp_used_strains 
 
     # We check if any value is under 0
-    for value in t0_series:
+    for ix, value in t0_used.iteritems():
         if value < 0:
             raise Exception(f"Illegal counts under 0 for {set_index_name}: {value}")
+        if pd.isnull(value):
+            logging.warning("Empty value in t0_used")
 
     # Checking if there are no control counts
     # If all are 0
-    if t0_series.sum() == 0:
+    if t0_used.sum() == 0:
         logging.info("Skipping log ratios for " + set_index_name + ", which has no"
                      " control counts\n.")
         return None
-  
-    use1 = [bool(x < 0.5) for x in all_df_has_gene['f']]
 
-    # Note that central_insert_bool_list has to be the same length as all_cix, 
-    # and t0_series, and strainsUsed
-    gene_fit = GeneFitness(genes_df, all_df_has_gene, 
-                           exp_reads_w_central_insertions, t0_series[central_insert_bool_list],
-    		           strainsUsed_hg2, genesUsed, sorted(genesUsed12), 
-    		           minGenesPerScaffold=minGenesPerScaffold,
-                           set_index_name=set_index_name,
-                           cdebug=False,
-                           use1 = use1)
-
-    
+    # Getting the cntrl values (besides this one if it is a Time0)
     cntrl = list(expsT0[t0set])
     if set_index_name in cntrl:
         cntrl.remove(set_index_name)
     if len(cntrl) < 1:
         raise Exception(f"No Time0 experiments for {set_index_name}, should not be reachable")
 
-    strain_fit_ret_d = StrainFitness(exp_reads_w_central_insertions, 
-                      all_df[cntrl].sum(axis=1)
+    strain_fit_ret_d = StrainFitness(exp_used_strains, 
+                      all_df_used[cntrl].sum(axis=1),
+                      debug_print=False
                       )
+
+    all_used_locId = all_df_used['locusId'] 
+    all_used_f = all_df_used['f']
+    # We need to update the boolean indexing lists- program bound to fail.
+    gene_fit = GeneFitness(genes_df, all_used_locId, 
+                           exp_used_strains, all_used_f, 
+                           t0_used,
+    		           genesUsed, sorted(genesUsed12), 
+    		           minGenesPerScaffold=minGenesPerScaffold,
+                           set_index_name=set_index_name,
+                           cdebug=False,
+                           use1 = use1)
     
     # gene_fit, strain_fit, and strain_se
     ret_d = {"gene_fit": gene_fit, 
@@ -215,7 +260,7 @@ def get_t0set_and_to_subtract(set_index_name, exps_df):
     Returns:
        t0set: (str) Related t0set to set_index_name
        to_subtract: (bool) Whether or not we need to subtract
-            values (if this is a t0set)
+            values (if this is a Time0)
     """
 
     # to_subtract is a boolean which says whether the short is a Time0 
@@ -233,8 +278,8 @@ def get_t0set_and_to_subtract(set_index_name, exps_df):
 
 
 
-def GeneFitness(genes_df, all_df_has_gene, crt_all_series_has_gene,
-                crt_t0_series_has_gene, strainsUsed_has_gene, genesUsed,
+def GeneFitness(genes_df, all_used_locId, exp_used_strains,
+                all_used_f, t0_used, genesUsed,
                 genesUsed12, minGenesPerScaffold=None,
                 set_index_name=None,
                 base_se = 0.1,
@@ -244,26 +289,29 @@ def GeneFitness(genes_df, all_df_has_gene, crt_all_series_has_gene,
     Args:
         genes_df: Data frame holding genes.GC table
                     must include cols locusId, scaffoldId, and begin (genes)
-        all_df_has_gene: 
-            subset of all_df (with good genes) which at the least contains headers:
-                locusId, f (strainInfo)
 
-        crt_all_series_has_gene (pandas Series): with counts for the current set.indexname 
+        Length of below 4 objects is nAllStrainsCentral
+        all_used_locId (pandas Series): all the locusIds from all_df_used
+        all_used_f (pandas Series): all the f values from all_df_used (float)
+                                    fractional insertion values.
+
+        exp_used_strains (pandas Series): with counts for the current set.indexname 
                                  with central_insert_bool_list value true (0.1<f<0.9) [countCond]
-        crt_t0_series_has_gene (pandas Series): with t0 counts for each strain [countT0]
-
-        # Convert below into pandas series
-
-        strainsUsed_has_gene pandas Series(list<bool>): whose length is Trues in central_insert_bool_list
+        t0_used (pandas Series): with t0 counts for each strain [countT0]
+        strainsUsed_central_insert pandas Series(list<bool>): whose length is Trues in central_insert_bool_list
                         equivalent index to central_insert_bool_list True values
 
+
+        Length of this object is nGenesUsed 
         genesUsed: list<locusId> where each locusId is a string 
+
         genesUsed12 (list<str>): list of locusIds that have both high f (>0.5) and low f (<0.5)
                     insertions with enough abundance of insertions on both sides
         minGenesPerScaffold: int
         set_index_name: name of current set and index name from all.pool
-        use1: list<bool> length of True values in has_gene, has True where strain insertion
-                is .1<f<.5
+        
+        use1: boolean list for the all_df_used with 0.1 < f <0.5 is True, otherwise false,
+                Length is nAllStrainsCentralGoodGenes
 
 
         # other arguments are passed on to AvgStrainFitness()
@@ -281,7 +329,9 @@ def GeneFitness(genes_df, all_df_has_gene, crt_all_series_has_gene,
 
     Description:
         We call Average Strain Fitness 3 times. Once for the whole set of gene insertions,
-            once for the insertions within .1<f<.5, and once for .5<f<.9
+            once for the insertions within .1<f<.5, and once for .5<f<.9. The num rows
+            of df1 and df2 (called for .1<f<.5 and .5<f<.9) is nGenesUsed12, which is
+            the total number of genes that have enough insertions on both sides of f.
 
 
     Returns:
@@ -311,73 +361,60 @@ def GeneFitness(genes_df, all_df_has_gene, crt_all_series_has_gene,
             tot (int or nan)
             tot0 (int or nan)
     """
-    if cdebug:
-        with open("tmp/py_use1.txt", "w") as g:
-            g.write(json.dumps(use1, indent=2))
 
     
     # Python code:
-    main_df = AvgStrainFitness(crt_all_series_has_gene, 
-                               crt_t0_series_has_gene, 
-                               all_df_has_gene['locusId'],
-      		               strainsUsed=strainsUsed_has_gene, genesUsed=genesUsed,
-                               debug=False, mini_debug=1,
-                               current_set_index_name=set_index_name,
-                               run_typ="main_df")
+    main_df = AvgStrainFitness(exp_used_strains, 
+                               t0_used, 
+                               all_used_locId,
+      		               genesUsed=genesUsed,
+                               mini_debug=1,
+                               current_experiment_name=set_index_name,
+                               run_typ="main_df",
+                               debug=False)
     
     main_df['fitnorm'] = NormalizeByScaffold(main_df['fit'], main_df['locusId'],
                                              genes_df, minToUse=minGenesPerScaffold,
-                                             cdebug=True)
+                                             cdebug=False)
 
-    # Same as R:
-    stn_used_hg1 = pd.Series(
-                    data=[bool(strainsUsed_has_gene.iloc[i] and use1[i]) for i in range(len(strainsUsed_has_gene))],
-                    index = strainsUsed_has_gene.index
-                    )
-    if cdebug:
-        with open("tmp/py_sud1.txt", "w") as g:
-            g.write(json.dumps(stn_used_hg1, indent=2))
+    strainsUsed_now = [bool(all_used_f.iat[i] < 0.5 and all_used_locId.iat[i] in genesUsed12) \
+                    for i in range(len(all_used_locId))]
 
-    df_1 = AvgStrainFitness(crt_all_series_has_gene, 
-                               crt_t0_series_has_gene, 
-                               all_df_has_gene['locusId'],
-      		               strainsUsed=stn_used_hg1, genesUsed=genesUsed12,
+    # num rows should be len(genesUsed12)
+    df_1 = AvgStrainFitness(exp_used_strains, 
+                               t0_used, 
+                               all_used_locId,
+      		               strainsUsed=strainsUsed_now, genesUsed=genesUsed12,
                                mini_debug=1,
-                               current_set_index_name=set_index_name,
+                               current_experiment_name=set_index_name,
                                run_typ="df_1")
+
     
-    # Same as R
-    stn_used_hg2 = pd.Series(
-                        data = [bool(strainsUsed_has_gene.iloc[i] and not use1[i]) for i in range(len(strainsUsed_has_gene))],
-                        index = strainsUsed_has_gene.index
-                        )
-    if cdebug:
-        with open("tmp/py_sud2.txt", "w") as g:
-            g.write(json.dumps(stn_used_hg2, indent=2))
-    if cdebug:
-        debug_print(stn_used_hg2, 'stnhg2')
-
-
-    df_2 = AvgStrainFitness(crt_all_series_has_gene, 
-                            crt_t0_series_has_gene, 
-                            all_df_has_gene['locusId'],
-      		            strainsUsed=stn_used_hg2, genesUsed=genesUsed12,
+    strainsUsed_now = [bool(all_used_f.iat[i] >= 0.5 and all_used_locId.iat[i] in genesUsed12) \
+                    for i in range(len(all_used_locId))]
+    # num rows is equal to df_1, should be len(genesUsed12)
+    df_2 = AvgStrainFitness(exp_used_strains, 
+                            t0_used, 
+                            all_used_locId,
+      		            strainsUsed=strainsUsed_now, genesUsed=genesUsed12,
                             mini_debug=1,
-                            current_set_index_name=set_index_name,
-                            run_typ="df_2")
+                            current_experiment_name=set_index_name,
+                            run_typ="df_2",
+                            debug=False)
+    del strainsUsed_now
     
     if cdebug:
         #DEBUG
-        main_df.to_csv("tmp/py_main_df.tsv", sep="\t")
-        df_1.to_csv("tmp/py_df_1.tsv", sep="\t")
-        df_2.to_csv("tmp/py_df_2.tsv", sep="\t")
-        with open("tmp/py_genesUsed12.json", "w") as g:
-            g.write(json.dumps(genesUsed12, indent=2))
+        main_df.to_csv("tmp/Fpy_main_df.tsv", sep="\t")
+        df_1.to_csv("tmp/Fpy_df_1.tsv", sep="\t")
+        df_2.to_csv("tmp/Fpy_df_2.tsv", sep="\t")
+        #genesUsed12.to_csv("tmp/Fpy_genesUsed12.tsv", sep="\t")
 
-
+    # why do we need the indexes to match?
     for i in range(len(df_1['locusId'])):
         if df_1['locusId'].iat[i] != df_2['locusId'].iat[i]:
-            raise Exception(f"Non-matching locusId: {df_1['locusId'].iat[i]}, at index {i}")
+            raise Exception(f"Non-matching locusId: {df_1['locusId'].iat[i]}"
+                            f" != {df_2['locusId'].iat[i]}, at index {i}")
 
     # do we need one of these for df_2 as well? How are the locusIds listed?
     matched_ixs = py_match(list(main_df['locusId']), list(df_1['locusId'])) 
@@ -432,51 +469,55 @@ def GeneFitness(genes_df, all_df_has_gene, crt_all_series_has_gene,
 
 
 
-def AvgStrainFitness(crt_all_series_has_gene, 
-                    crt_t0_series_has_gene, 
-                    strainLocus,
+def AvgStrainFitness(exp_used_strains, 
+                    t0_used, 
+                    all_used_locId,
 		    minStrainT0 = 4, minGeneT0 = 40,
-		    genesUsed=None, strainsUsed=None,
+		    genesUsed=None, strainsUsed_short=None,
+                    minGeneFactorNStrains=3,
+                    strainFitAdjust=0,
 		    maxWeight = 20,
-		    minGeneFactorNStrains=3,
 		    debug=False,
                     mini_debug=0,
-                    current_set_index_name=None,
+                    current_experiment_name=None,
                     run_typ=None):
 
     """
-    Description:
-        We take the subsets of the pandas Series that align with hasGene from all_df, 
-            crt_all_series_has_gene is the column of the index
-            crt_t0_series_has_gene is the sum of the related t0s
-            strainLocus is the column of locusId that's related.
 
     Args:
-        crt_all_series_has_gene (Pandas Series <int>): counts at the 
+        exp_used_strains (Pandas Series <int>): counts at the 
                     end of the experiment condition.
-                    Comes from all_df, only counts that have genes.
-        crt_t0_series_has_gene (Pandas Series <int>): counts for Time0 for each strain
-        strainLocus (Pandas Series <locusId (str)>): total locusIds of 
+                    Comes from all_df, only counts that have genes. Same length as 
+                    t0_used (Reads for this experiment name)
+        t0_used (Pandas Series <int>): counts for Time0 for each used strain
+        all_used_locId (Pandas Series <locusId (str)>): total locusIds of 
                                         all_df - the same for every time 
-                                        this function is run. These should correspond to 
-                                        the rows in all_series and t0 series
+                                        this function is run. Same length as above two 
+                                        variables (crt_all... , crt_t0_...)
+                                        What if no locusId exists for strain?
+                                        
+        genesUsed: list<locusId> where each locusId is a string 
+        strainsUsed_short (list<bool>):  This is a boolean list which decides which strains out of exp_used_strains
+                                    and t0_used we will actually use. 
+                                    When we compute the first and second half
+                                    inserted genes, we need a way to distinguish between them.
+                                    Its length must be the same as the length of crt_all...crt_t0, and all_used
+                                    length = nAllStrainsCentralGoodGenes
         minStrainT0: int
         minGeneT0: int
-        genesUsed: list<locusId> where each locusId is a string 
         maxWeight: int 
 		 # maxWeight of N corresponds to having N reads on each side
                  #     (if perfectly balanced); use 0 for even weighting
 		 # 20 on each side corresponds to a standard error of ~0.5; keep maxWeight low because outlier strains
 		 # often have higher weights otherwise.
 
-        strainsUsed: pandas Series: Subset of strainsUsed (list bool) which is True in
-                              central_insert_bool_list and might also have other conditions such as f >/< 0.5
-        current_set_index_name (str): Name of set index in all.poolcount that
+        current_experiment_name (str): Name of set index in all.poolcount that
                                     we are currently analyzing
         run_typ (str): Debugging which part of GeneFitness are we running?
+                        Fixed options: 'main_df', 'df_1', 'df_2'
 
     Returns:
-        DataFrame: with cols:
+        fitness_df (pandas DataFrame): with cols
             fit: fitRaw column normalized by Median 
             fitNaive (float): 
             fitRaw: list<float>
@@ -490,132 +531,149 @@ def AvgStrainFitness(crt_all_series_has_gene,
             tot0: list<int>
         
         * The length of the columns should be equal to the number of unique values
-        in strainLocus[strainsUsed]
+        in all_used_locId[strainsUsed_short]
 
     
-    # If genesUsed (as a list of locusId) and strainsUsed (as boolean vector) are provided,
+    # If genesUsed (as a list of locusId) and strainsUsed_short (as boolean vector) are provided,
     # then considers only those strains & genes; minimum requirements.
+
+    Description:
+        We take the subsets of the pandas Series that align with hasGene from all_df, 
+            exp_used_strains_has_gene is the column of the index
+            t0_used_has_gene is the sum of the related t0s
+            all_used_locId is the column of locusId that's related.
     """
 
     if mini_debug > 0:
-        print(f"Running AverageStrainFitness on {current_set_index_name} ({run_typ})")
+        print(f"Running AverageStrainFitness on {current_experiment_name} ({run_typ})")
 
-    if (len(crt_all_series_has_gene) < 1 or len(crt_t0_series_has_gene) < 1 
-            or len(strainLocus) < 1
-            or len(crt_all_series_has_gene) != len(crt_t0_series_has_gene) or 
-            len(crt_all_series_has_gene) != len(strainLocus)):
+    # crt_all... and crt_t0... contain integers, all_used_locId is str (locusId)
+    if (len(exp_used_strains) < 1 or 
+            len(exp_used_strains) != len(t0_used) or 
+            len(exp_used_strains) != len(all_used_locId)):
         raise Exception("None or misaligned input data:\n"
-                f"crt_all_series len: {len(crt_all_series_has_gene)}\n"
-                f"crt_t0_series len: {len(crt_t0_series_has_gene)}\n"
-                f"strainLocus len: {len(strainLocus)}.\n"
+                f"exp_used_strains len: {len(exp_used_strains)}\n"
+                f"t0_used len: {len(t0_used)}\n"
+                f"all_used_locId len: {len(all_used_locId)}.\n"
                 "All lengths must be equal and above 1."
                 )
-   
+
+    # We update the strains that are used (subset of all_df) if we want
+    # to, for example if we only want the strains inserted with f<0.5
+    # The number of True values in strainsUsed_short is nAllStrainsCentralGoodGenes*
+    if strainsUsed_short is not None:
+        if len(strainsUsed_short) != len(exp_used_strains):
+            raise Exception("Somehow length of strainsUsed_short is not the same"
+                            " as length of current all_subset for experiment."
+                            f" The length of strainsUsed_short = {len(strainsUsed_short)}, whereas "
+                            f" the length of current reads is {len(exp_used_strains)}")
+        if run_typ != "main_df":
+            print("nAllStrainsCentralGoodGenes12 = " + str(strainsUsed_short.count(True)))
+        exp_used_strains = exp_used_strains[strainsUsed_short]
+        t0_used = t0_used[strainsUsed_short]
+        all_used_locId = all_used_locId[strainsUsed_short]
+
     # Check if accurate?
-    crt_t0_name = crt_t0_series_has_gene.name
-
-
-    # Up to here it's exactly the same as the R file, Note that the indexes of strainsUsed
-    #       map to index integer locations in strainLocus
-    strainsUsed = [bool(strainsUsed.iloc[ix] and (strainLocus.iloc[ix] in genesUsed)) for ix in \
-                    range(len(strainsUsed))]
-
-    if strainsUsed.count(True) == 0:
-        raise Exception("After data preparing, no usable strains are left.")
-
-    # All 3 series below have the same length
-    # Note, already a difference of 2 values between current values and R input
-    crt_t0_series_hg_su = crt_t0_series_has_gene[strainsUsed]
-    crt_all_series_hg_su = crt_all_series_has_gene[strainsUsed]
-    strainLocus_su = strainLocus[strainsUsed]
+    crt_t0_name = t0_used.name
 
     if debug:
-        logging.info("Number of unique values: " + str(len(strainLocus_su.unique())))
+        logging.info("Number of unique values: " + str(len(all_used_locId.unique())))
         logging.info("Above number is equivalent to number of rows in final DFs")
-        crt_t0_series_hg_su.to_csv("tmp/py_crt_t0_series_A1.tsv", sep="\t")
-        crt_all_series_hg_su.to_csv("tmp/py_crt_all_series_A1.tsv", sep="\t")
-        strainLocus_su.to_csv("tmp/py_strainLocus_su.tsv", sep="\t")
+        t0_used.to_csv("tmp/py_t0_used_A1.tsv", sep="\t")
+        exp_used_strains.to_csv("tmp/py_exp_used_strains_A1.tsv", sep="\t")
+        all_used_locId.to_csv("tmp/py_all_used_locId.tsv", sep="\t")
 
 
-    
-    if sum(crt_t0_series_hg_su) != 0:
-        readratio = sum(crt_all_series_hg_su) / sum(crt_t0_series_hg_su)
+    # this won't happen because the sum of t0's is always above 0 (in func  
+    # gene_strain_fit_func. Just a double check
+    if sum(t0_used) != 0:
+        readratio = exp_used_strains.sum()/t0_used.sum()
     else:
-        raise Exception(f"No t0 values for this set/index value: {current_set_index_name}\n"
+        raise Exception(f"No t0 values for this set/index value: {current_experiment_name}\n"
                          " Cannot get readratio (Division by 0).")
 
     if debug:
         print('readratio:')
         print(readratio)
     
-    # This is where we get strain Fitness
-    strainFit = getStrainFit(crt_all_series_hg_su, crt_t0_series_hg_su, readratio)
+    # This is where we get strain Fitness (pandas Series) - median normalized log2 ratios between
+    # strain and T0 sums. pandas Series whose length is nAllStrainsCentralGoodGenes(*)
+    strainFit = getStrainFit(exp_used_strains, t0_used, readratio, debug=True)
 
-    if debug:
-        with open('tmp/py_StrainFit.tsv', 'w') as g:
-            g.write(json.dumps(list(strainFit), indent = 2))
 
-    #print(strainFit)
-
-    strainFitAdjust = 0
 
     # Per-strain "smart" pseudocount to give a less biased per-strain fitness estimate.
     # This is the expected reads ratio, given data for the gene as a whole
     # Arguably, this should be weighted by T0 reads, but right now it isn't.
     # Also, do not do if we have just 1 or 2 strains, as it would just amplify noise
-    # note use of as.vector() to remove names -- necessary for speed
 
-    # nStrains_d is a dict which takes list strainLocus_su of object -> number of times 
+    '''
+    # nStrains_d is a dict which takes locusIds -> number of times 
     #   it appears in the list. Ordered_strains is a unique list of strains.
-    nStrains_d, ordered_strains = py_table(list(strainLocus_su), return_unique=True)
+    nStrains_d, ordered_strains = py_table(list(all_used_locId), return_unique=True)
 
+    # This list below is weird, we only keep the numbers relative to a sorted list of 
+    # unique locusIDS????
     # Almost the same as R version - what's the difference?
     nStrains = [nStrains_d[ordered_strains[i]] for i in range(len(ordered_strains))]
 
     if debug:
         with open('tmp/py_NStrains.tsv', 'w') as g:
             g.write(json.dumps(list(nStrains), indent = 2))
+    '''
+
+    # pd.Series length of nGenesUsed* - medians over gene locusIds with insertions
+    # index is locusIds
+    geneFit1 = getGeneFit1(strainFit, all_used_locId, current_experiment_name) 
 
 
-    geneFit1 = getGeneFit1(strainFit, strainLocus_su, current_set_index_name) 
-
-    strainPseudoCount = getStrainPseudoCount(nStrains, minGeneFactorNStrains,
-                                             geneFit1, readratio, strainLocus_su,
-                                            debug_print_bool=False)
-
-
-    condPseudoCount = [math.sqrt(x) for x in strainPseudoCount]
-    t0PseudoCount = [1/math.sqrt(x) if x != 0 else np.nan for x in strainPseudoCount]
-
-
-    strainFit_weight = get_strainFitWeight(condPseudoCount, crt_all_series_hg_su,
-                        t0PseudoCount, crt_t0_series_hg_su,
-                        strainFitAdjust)
+    # Work on understanding below code:
+    # strainPseudoCount is a pandas Series, length is nAllStrainsCentralGoodGenes*
+    strainPseudoCount = getStrainPseudoCount(all_used_locId, 
+                            geneFit1, readratio, minGeneFactorNStrains=minGeneFactorNStrains, 
+                            debug_print_bool=True)
     
+    # length of the following pandas Series is nAllStrainsCentralGoodGenes*
+    # Remember no values in strainPseudoCount can be 0, so 1/strainPseudocount.sqrt is fine 
+    condPseudoCount = strainPseudoCount.apply(np.sqrt)
+    t0PseudoCount = 1/condPseudoCount # (This applies to every element in the series)
+
+    # place holder for 'strain fit adjusted' values
+    strainFit_adjusted = (condPseudoCount + exp_used_strains).apply(np.log2) \
+                        - (t0PseudoCount + t0_used).apply(np.log2) \
+                        - strainFitAdjust
+
+
     # strain Standard Deviation (list of floats) (We add 1 to avoid division by zero error)
-    strainSD_pre = [math.sqrt(1/(1 + crt_t0_series_hg_su.iat[i]) + 1/(1+crt_all_series_hg_su.iat[i]))/np.log(2) \
-                    for i in range(len(crt_t0_series_hg_su))]
+    strainSD = ( (1/(1 + t0_used) + 1/(1 + exp_used_strains)).apply(np.sqrt) )/np.log(2)
 
-    strainSD = pd.Series(data=strainSD_pre,
-                             index=crt_t0_series_hg_su.index)
-
-
-    # "use harmonic mean for weighting; add as small number to allow maxWeight = 0."
-    strainWeight = []
-    # We use ix_vals to maintain the indices from the original series
-    ix_vals = []
     
-    for i in range(len(crt_t0_series_hg_su)):
-        # we get the minimum from 'maxWeight (=20)' and a safe harmonic mean 
-        cmin = min(maxWeight, 2/( 1/(1+crt_t0_series_hg_su.iat[i]) + 1/(1 + crt_all_series_hg_su.iat[i]) ) )
-        strainWeight.append(cmin)
-    strainWeight = pd.Series(data=strainWeight, index=crt_t0_series_hg_su.index)
+    # Getting strainWeight
+    # "use harmonic mean for weighting; add as small number to allow maxWeight = 0."
+    s1 = 2/( 1/(1+t0_used) + 1/(1 + exp_used_strains) )
+    strainWeight = s1.combine(maxWeight, min, 0)
+    num_max_weight = list(strainWeight).count(maxWeight)
+    print(f"{num_max_weight} of the {len(strainWeight)} variables passed" \
+          f" the max weight of {maxWeight}")
+
+    if mini_debug > 1:
+        # Vars to output: strainSD, strainWeight, strainFit_adjusted, strainFit,
+        # abs(strainFit_adjusted - strainFit), t0PseudoCount, condPseudoCount,
+        # strainPseudoCount, geneFit1
+        for x in [["strainSD.tsvsrs", strainSD],
+                  ["strainWeight.tsvsrs", strainWeight],
+                  ["strainFit_adjusted.tsvsrs", strainFit_adjusted],
+                  ["strainFit.tsvsrs", strainFit],
+                  ["sf_diff.tsvsrs", strainFit_adjusted - strainFit],
+                  ["t0PseudoCount.tsvsrs", t0PseudoCount],
+                  ["condPseudoCount.tsvsrs", condPseudoCount],
+                  ["strainPseudoCount.tsvsrs", strainPseudoCount],
+                  ["geneFit1.tsvsrs", geneFit1]
+                  ]:
+            x[1].to_csv("tmp/" + x[0], sep="\t")
+        raise Exception("mini_debug>1 so stopping after printing vars")
 
 
-    # Number of groups should be equal to the number of unique values in strainLocus_su
-    if debug:
-        num_unique = len(strainLocus_su.unique())
-        print(f"Number of unique strains in strainLocus_su: {num_unique}")
 
     # We create a list of values for each of the following derived floats/ints (except locusId, which is str)
     fitness_d = {
@@ -630,22 +688,15 @@ def AvgStrainFitness(crt_all_series_has_gene,
              "locusId": []
             }
 
-    # Note: the number of rows in the resultant dataframes is equal to the
-    # number of unique values in strainLocus_su
-    t0_index_groups = py_split(crt_t0_series_hg_su, strainLocus_su, typ="groups")
-    count_vals = 0
+    # This groups our row number from all_df by the same locusIds
+    t0_index_groups = t0_used.groupby(by=all_used_locId).groups 
     for k, v in t0_index_groups.items():
-        count_vals += 1
-        if debug:
-            print(f"t0_index_groups key: {k}")
-            print("t0_index_groups value:")
-            print(v)
-        # group the values by locusId = strainLocus
-
         # crt_result is a dict that matches with fitness_d above
-        crt_result_d = sub_avg_fitness_func(list(v), strainWeight, strainFit_weight,
-                               crt_all_series_hg_su, crt_t0_series_hg_su,
-                               strainSD, k)
+        # n will be the length of 'v' - 
+        # which is the number of times a locusId repeats in all_used_locId
+        crt_result_d = sub_avg_fitness_func(list(v), strainWeight, strainFit_adjusted,
+                               exp_used_strains, t0_used,
+                               strainSD, k, cdebug=False)
         for keyy, valu in crt_result_d.items():
             fitness_d[keyy].append(valu)
 
@@ -663,56 +714,87 @@ def AvgStrainFitness(crt_all_series_has_gene,
 
 
 
-def getStrainFit(crt_all_series_hg_su, crt_t0_series_hg_su, readratio):
+def getStrainFit(crt_all_series_hg_su, crt_t0_series_hg_su, readratio,
+                 debug=False):
     """
-    Description:
-        We take the current values, add the readratio (why?) then take the log2 values
-            then normalize by the median
     Args:
-        crt... : pandas series with integers
+        crt... : pandas series with integers. Length is nAllStrainsCentralGoodGenes
         readratio: float
     returns:
         strainFit (pandas series): of floats length is the same as len(crt_all_series_hg_su) =
                                                                    len(crt_t0_series_hg_su)
+                                    Normalized log 2 difference between values and time0s
+                                    Length is nAllStrainsCentralGoodGenes(*)
+                                    (Could be shortened due to having only strains in genesUsed12)
+                                    Index are original row number from all_df 
+    
+    Description:
+        We take the current values, add the readratio (to eliminate possible log2(0)) then take the log2 values
+            then normalize by the median, returning a pandas series (vector) of normalized log2 ratios.
+        Why do we do median normalization while taking strain fitness?
 
     use sqrt(readratio), or its inverse, instead of 1, so that the expectation
     is about the same regardless of how well sampled the strain or gene is
     """
     # use sqrt(readratio), or its inverse, instead of 1, so that the expectation
     # is about the same regardless of how well sampled the strain or gene is
+    # the reason we add the readratio is to make sure there isn't log2(0)
     all_1 = crt_all_series_hg_su + math.sqrt(readratio)
     t0_1 = crt_t0_series_hg_su + 1/math.sqrt(readratio)
     all_2 = all_1.apply(math.log2)
     t0_2 = t0_1.apply(math.log2)
     strainFit = mednorm(all_2 - t0_2)
+
+    if debug:
+        fn = os.path.join('tmp','strainfit.tsv')
+        strainFit.to_csv(fn, sep='\t')
+        print(f"strainFit original to file at {fn}")
     return strainFit
 
 
-def getGeneFit1(strainFit, strainLocus_su, current_set_index_name, print_op=None):
+def getGeneFit1(strainFit, good_strainLocusIds, current_experiment_name, print_op=None):
     """
-    strainFit: pandas Series of locusIds as index labels for floats. It's the 
-                normalized difference between actual counts and t0 counts.
-    strainLocus_su: list<locusId (str)>
-        Both inputs have the same length
-    We group the values of strainFit by their locusIds
-        in strainLocus_su, and calculate the median of each group
-        Then we take the overall mednorm, which means subtracting
-        the total median from each value.
+    
+    Both of the following inputs have the same length
+    strainFit (pandas Series <float>): floats with all_df row nums as index labels . It's the 
+                                normalized log2 difference between actual counts and t0 counts.
+                                Length is nAllStrainsCentralGoodGenes(*)
+                                (* Could be shortened due to having only strains in genesUsed12)
+    good_strainLocusIds (pandas Series <locusId (str)>): related locusIds to above floats
+                    Length is nAllStrainsCentralGoodGenes(*)
+                    (* Could be shortened due to having only strains in genesUsed12)
+    current_experiment_name (str): Experiment name
 
     Returns: 
-        geneFit1 (pandas Series (?)):
+        geneFit1 (pandas Series <float>): 
+                                    Its length will be the number of unique
+                                    locus Ids in good_strainLocusIds,
+                                    which could be the number of genes
+                                    in genesUsed or genesUsed12 depending
+                                    on if the run is main_df, or df_1/df_2
+                                    Index is the locusId 
+
+    Description:
+        We group the values of strainFit by their locusIds
+            in good_strainLocusIds, and calculate the median of each group
+            Then we normalize by the median, which means we subtract
+            the total median from each value.
+                                
     """
 
     #logging.info(f"Getting geneFit1 for {strainFit.name}")
 
     new_df = pd.DataFrame.from_dict({
-            current_set_index_name : strainFit,
-            'locusId': strainLocus_su
+            current_experiment_name : strainFit,
+            'locusId': good_strainLocusIds
     })
-   
+    
+    # We get the medians over all the strains with the same locusId
+    # The index will be the locusIds
     medians_df = py_aggregate(new_df, 'locusId', func='median')
 
-    geneFit1 = mednorm(medians_df[current_set_index_name])
+    geneFit1 = mednorm(medians_df[current_experiment_name])
+
 
     if print_op is not None:
         geneFit1.to_csv(print_op, sep='\t') 
@@ -720,85 +802,67 @@ def getGeneFit1(strainFit, strainLocus_su, current_set_index_name, print_op=None
     return geneFit1
 
 
-def getStrainPseudoCount(nStrains, minGeneFactorNStrains, geneFit1, readratio, strainLocus_su,
+def getStrainPseudoCount(all_used_locusId, geneFit1, readratio, minGeneFactorNStrains=3, 
                          debug_print_bool=False):
     """
     Args:
-        nStrains list: ( used to be pandas Series) list of number of times locusId appeared ordered
-                        the same way as
-        minGeneFactorNStrains: int
-        geneFit1 (pandas Series): median-normalized medians of locusIds over strains
-                
-        readratio (float): (sum of counts/ sum of t0 for this sample index)
-        strainLocus_su (Pandas Series <locusId (str)>): which locus the strain is associated with 
+
+        all_used_locusId (Pandas Series <locusId (str)>): which locus the strain is associated with 
                                                      from all_df_subset['locusId'], and applied
                                                      boolean list 'strainsUsed' to it.
+                    Length is nAllStrainsCentralGoodGenes(*)
+                    (* Could be shortened due to having only strains in genesUsed12)
+        minGeneFactorNStrains: int
+        geneFit1 (pandas Series): median-normalized medians of locusIds over strains,
+                                  length is nGenesUsed or nGenesUsed12.
+                                  NOTE that the index for this series is
+                                  the locusId, so it's locusId -> number.
+                                  Thus we can access its values using locusIds 
+                
+        readratio (float): (sum of counts/ sum of t0 for this sample index)
 
     Returns:
-        strainPseudoCount (pandas Series): list of floats, same length as geneFit1 
+        strainPseudoCount (pandas Series): list of floats, same length as geneFit1,
+                                            and we keep the index, being the row 
+                                            number from all_df. No values can be 0
     """
+
+    # This 'table; is unique locus Ids pointing to the number of times they occur
+    locusId2TimesSeen_d = py_table(all_used_locusId) 
     
-    
-    # unique_nums is numbering all unique values from strainLocus_su with numbers 0 and up 
-    # e.g., ["a","a","a","b","b",...] -> [0, 0, 0, 1, 1, ...]
-    unique_nums = []
-    unique_vals = {}
-    unique_strain_loci = pd.unique(strainLocus_su)
-    crt_unique = -1
-    if debug_print_bool:
-        print("length of strainLocus_su:")
-        print(len(strainLocus_su))
-        print(".size ?")
-        print(strainLocus_su.size)
-        print("Number of unique values:")
-        print(len(unique_strain_loci))
-
-
-    for i in range(strainLocus_su.size):
-        locusId = strainLocus_su.iat[i]
-        if locusId in unique_vals:
-            unique_nums.append(unique_vals[locusId])
-        else:
-            crt_unique += 1
-            unique_vals[locusId] = crt_unique
-            unique_nums.append(crt_unique)
-
-    if debug_print_bool:
-        #debug_print(unique_nums, 'unique_nums')
-        with open("pUniqueNums.tsv", "w") as g:
-            g.write(json.dumps(unique_nums, indent=2))
-
 
     strainPseudoCount = []
-    if debug_print_bool:
-        print("length of nStrains")
-        print(len(nStrains))
-        print("length of geneFit1:")
-        print(len(geneFit1))
-        print('max val from unique_nums:')
-        print(max(unique_nums))
-    for i in range(len(unique_nums)):
-        if nStrains[unique_nums[i]] >= minGeneFactorNStrains:
-            strainPseudoCount.append(2**geneFit1[unique_nums[i]]*readratio)
+    for locId in all_used_locusId.values:
+        if locusId2TimesSeen_d[locId] >= minGeneFactorNStrains:
+            strainPseudoCount.append(2**geneFit1[locId]*readratio)
         else:
             strainPseudoCount.append(readratio)
 
+    strainPseudoCountSeries = pd.Series(strainPseudoCount, index=all_used_locusId.index)
+
     if debug_print_bool:
-        with open('tmp/py_StrainPseudoCount.json', 'w') as g:
-            g.write(json.dumps(strainPseudoCount, indent=2))
+        strainPseudoCountSeries.to_csv('tmp/py_strainPseudoCount.tsvsrs')
+        print("Wrote strainPseudoCount Series to tmp/py_strainPseudoCount.tsvsrs")
 
-        print("length of strainPseudoCount:")
-        print(len(strainPseudoCount))
 
-    return pd.Series(data=strainPseudoCount)
+    return strainPseudoCountSeries
 
 
 def get_strainFitWeight(condPseudoCount, crt_all_series_hg_su,
                         t0PseudoCount, crt_t0_series_hg_su,
-                        strainFitAdjust
+                        strainFitAdjust = 0
                         ):
     """
+condPseudoCount, exp_used_strains,
+                                            t0PseudoCount, t0_used)
+
+
     Args:
+
+
+        # length of the following series is nAllStrainsCentralGoodGenes*
+
+
         condPseudoCount:
         t0PseudoCount: 
         strainFitAdjust: (int)
@@ -806,6 +870,7 @@ def get_strainFitWeight(condPseudoCount, crt_all_series_hg_su,
     Returns:
         strainFit_weight (pandas Series) with index labels fitting crt_all_series...
     """
+    '''
     strainFit_weight = []
     for i in range(len(condPseudoCount)):
         strainFit_weight.append(math.log2(condPseudoCount[i] + crt_all_series_hg_su.iat[i]) \
@@ -813,54 +878,64 @@ def get_strainFitWeight(condPseudoCount, crt_all_series_hg_su,
                                 - strainFitAdjust)
 
     return pd.Series(data=strainFit_weight, index=crt_all_series_hg_su.index)
+    '''
+    return None
 
 
-def sub_avg_fitness_func(ix_l, strainWeight, strainFit_weight,
-                               crt_all_series_hg_su, crt_t0_series_hg_su,
-                               strainSD, series_name, cdebug=False):
+def sub_avg_fitness_func(ix_l, strainWeight, strainFit_adjusted,
+                               exp_used_strains, t0_used,
+                               strainSD, locusIdstr, cdebug=False):
     """
     Args:
-        ix_l (int): list<int> of indexes (from grouped locusIds in crt_t0_series_hg_su)
+        ix_l (int): list<int> of indexes (from grouped locusIds in t0_used)
                     (grouped by locusId)
 
-        strainWeight (pandas Series list<float>): each element has a minimum value of 'maxWeight', 
+        strainWeight (pandas Series <float>): each element has a maximum value of 'maxWeight', 
                                     which normally equals 20,
                                     other elements have values which are computed 
-                                    in AvgStrainFitness func
-        strainFit_weight pandas Series:  Same index as strainWeight
-        crt_all_series_hg_su (pandas series list<int>): 
-        crt_t0_series_hg_su (pandas series list<int>): 
-        strainSD (list<float>): 
-        series_name: (str)
+                                    in AvgStrainFitness func. All positive values.
+                                    Length of this is  nAllStrainsCentralGoodGenes*
+        strainFit_adjusted pandas Series <float>:  Same index as strainWeight
+                                    Length of this is  nAllStrainsCentralGoodGenes*
+        exp_used_strains (pandas series <int>): The used strain-> reads from all_df
+                                    Length of this is  nAllStrainsCentralGoodGenes*
+        t0_used (pandas series <int>): The strain -> t0sum from t0tot 
+                                    Length of this is  nAllStrainsCentralGoodGenes*
+        strainSD (pandas Series <float>): 
+                                    Length of this is  nAllStrainsCentralGoodGenes*
+        locusIdstr: (str)
     Returns:
            ret_d: dict with the following keys:
-                fitRaw: float
-                sd: float
-                sumsq: float
-                sdNaive: float
-                n: int
-                nEff: float 
-                tot: int 
-                tot0: int
+                fitRaw (float): 
+                sd (float):
+                sumsq (float):
+                sdNaive (float):
+                n (int):
+                nEff (float ):
+                tot (int ):
+                tot0 (int):
+    Description:
+        What are the strainWeights? 
+        We get the sum of the weights of all the strains
+        
     """
-    totw = sum(strainWeight[ix_l]) 
-    sfw_tmp = list(strainFit_weight[ix_l])
-    fitRaw = sum(py_mult_vect(list(strainWeight[ix_l]), sfw_tmp))/totw
-    tot = sum(crt_all_series_hg_su[ix_l])
-    tot0 = sum(crt_t0_series_hg_su[ix_l])
-    pre_sd_list1 = [strainWeight[j]**2 * strainSD[j] for j in ix_l]
-    sd = math.sqrt(sum(pre_sd_list1))/totw
-    pre_sumsq1 = [(strainFit_weight[j] - fitRaw)**2 for j in ix_l]
-    sumsq = sum(py_mult_vect(list(strainWeight[ix_l]), pre_sumsq1))/totw
+
+    total_weight = strainWeight[ix_l].sum()
+    fitRaw = (strainWeight[ix_l] * strainFit_adjusted[ix_l]).sum()/total_weight
+    tot = exp_used_strains[ix_l].sum()
+    tot0 = t0_used[ix_l].sum()
+    sd = math.sqrt( ( (strainWeight[ix_l]**2) * (strainSD[ix_l]) ).sum()/total_weight)
+    pre_sumsq1 = (strainFit_adjusted[ix_l] - fitRaw)**2
+    sumsq = ( strainWeight[ix_l] * ((strainFit_adjusted[ix_l] - fitRaw)**2) ).sum()/total_weight
     
     # 'high-N estimate of the noise in the log2 ratio of fitNaive'
     # 'But sdNaive is actually pretty accurate for small n -- e.g.'
     # 'simulations with E=10 on each side gave slightly light tails'
     # '(r.m.s.(z) = 0.94).'
 
-    sdNaive = math.sqrt( (1/(1+tot)) + (1/(1+tot0)) )/np.log(2)
+    sdNaive = (  (1/(1+tot)) + (1/(1+tot0)) ).apply(np.sqrt)/np.log(2)
     
-    nEff = totw/(strainWeight[ix_l].max())
+    nEff = total_weight/(strainWeight[ix_l].max())
     ret_d = {
              "fitRaw": fitRaw,
              "sd": sd,
@@ -870,28 +945,51 @@ def sub_avg_fitness_func(ix_l, strainWeight, strainFit_weight,
              "nEff": nEff,
              "tot": tot,
              "tot0": tot0,
-             "locusId": series_name
+             "locusId": locusIdstr 
             }
 
     return ret_d
 
 
 def StrainFitness(all_cix_series,
-                all_cntrl_sum):
+                all_cntrl_sum,
+                debug_print=False):
     """
     simple log-ratio with pseudocount (of 1) and normalized so each scaffold has a median of 0
     note is *not* normalized except to set the total median to 0
     
     Args:
-        all_cix_series (pandas Series): The current set+index column of values from all.poolcount
-        all_cntrl_sum (pandas Dataframe): The sum of the current control values without the current index; should
-                       be a data frame with set+index names for controls -> sum of values over all rows.
+        all_cix_series (pandas Series): The current experiment name column of values from all_df_used 
+                                        length = nAllStrainsCentralGoodGenes
+        all_cntrl_sum (pandas Series): The sum of the current control values without the current index; 
+                                        Is a pandas series the same length as all_cix series,
+                                        but with the sum of the other control values
+                                        length = nAllStrainsCentralGoodGenes
+        debug_print (bool): Decides whether to print out this function's results and stop
+                            the program
+
     Returns:
         fit: pandas Series (float) with a computation applied to values
+            Same length as inputs: nAllStrainsCentralGoodGenes
         se: pandas Series (float) with computations applied to values
+            Same length as inputs: nAllStrainsCentralGoodGenes
     """
+
     sf_fit = mednorm( (1+all_cix_series).apply(np.log2) - (1 + all_cntrl_sum).apply(np.log2) )
     sf_se = (1/(1 + all_cix_series) + 1/(1 + all_cntrl_sum)).apply(math.sqrt)/ np.log(2)
+
+
+    if debug_print:
+        print("Input Series to check:")
+        print(all_cix_series)
+        print("Input Control Sum Series to check:")
+        print(all_cntrl_sum)
+        print("Computed strain fitness")
+        print(sf_fit)
+        print("Computed strain standard error")
+        print(sf_se)
+        raise Exception("Stopping for debugging.")
+
     return {
             "fit": sf_fit,
             "se": sf_se

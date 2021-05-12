@@ -217,23 +217,28 @@ def py_table(list_of_str, return_unique=False):
     if type(list_of_str) == pd.core.series.Series:
         list_of_str = list(list_of_str)
 
-    unique_vals = []
     ret_d = {}
     for x in list_of_str:
         if x in ret_d:
             ret_d[x] += 1
         else:
             ret_d[x] = 1
-            unique_vals.append(x)
 
     if return_unique: 
-        return [ret_d, unique_vals]
+        return [ret_d, list(ret_d.keys())]
     else:
         return ret_d 
 
 
-def py_aggregate(dataframe_A, group_by_label, func='sum'):
+def py_aggregate(dataframe_A, group_by_label, func='sum',
+                reset_index_bool=False):
     """
+    
+    Question: 
+        Does this return a DataFrame/ Series with the new unique
+        group by labels as the 'index' of the dataframe?
+
+
     group dataframe_A according to items
     in list and apply function over them.
     func = ['sum' or 'mean']
@@ -273,16 +278,18 @@ def py_aggregate(dataframe_A, group_by_label, func='sum'):
     gb = dataframe_A.groupby(group_by_label)
 
     if func == 'sum':
-        res = gb.sum().reset_index()
-        return res
+        res = gb.sum()
     elif func == 'mean':
-        res = gb.mean().reset_index()
-        return res
+        res = gb.mean()
     elif func == 'median':
-        res = gb.median().reset_index()
-        return res
+        res = gb.median()
     else:
         raise Exception("Func must be str from ['sum', 'mean']")
+        
+    if reset_index_bool:
+        return res.reset_index()
+    else:
+        return res
 
 
 
