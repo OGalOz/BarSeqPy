@@ -62,9 +62,9 @@ Input to FEBA_Save_Tables 'gene_fit_d' is big:
             se (pandas DataFrame of float) Standard Error dataframe with one column per setindexname
             t: (pandas DataFrame of float) t-statistic dataframe with one column per setindexname
             tot1 (pandas DataFrame of int or nan) dataframe with one column per setindexname
-            tot1_0 (pandas DataFrame of int or nan) dataframe with one column per setindexname
+            tot0_1 (pandas DataFrame of int or nan) dataframe with one column per setindexname
             tot2 (pandas DataFrame of int or nan) dataframe with one column per setindexname
-            tot2_0 (pandas DataFrame of int or nan) dataframe with one column per setindexname
+            tot0_2 (pandas DataFrame of int or nan) dataframe with one column per setindexname
             tot (pandas DataFrame of int or nan) dataframe with one column per setindexname
             tot0 (pandas DataFrame of int or nan) dataframe with one column per setindexname
             version (str)
@@ -220,7 +220,7 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
     # q is quality, u is used
     if list(gene_fit_d['q']['u']).count(True) == 0:
         logging.warning("***Warning: 0 'OK' experiments.")
-        tmp_df = tmp_df[py_order(list(tmp_df['locusId']))]
+        tmp_df = tmp_df.sort_values(by='locusId')
     else:
         u_l = list(gene_fit_d['q']['u'])
         cols_to_keep = [i for i in range(len(u_l)) if u_l[i]]
@@ -283,7 +283,6 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
                                              "fit standard error naive")
 
     #13 Strain Fit
-    # py_order from translate_R_to_pandas.py
     logging.info("Getting order of scaffolds to print Strain Fit.")
 
     tmp_df = gene_fit_d['strains'].join(gene_fit_d['strain_lrn'])

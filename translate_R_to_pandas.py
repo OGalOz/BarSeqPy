@@ -35,7 +35,7 @@ Functions to translate:
     aggregate: Combines dataframes with a function?
     match: returns a vector of the positions of (first) matches of its first argument in its second
     order: Returns indeces of locations of sorted values - Can also be substituted by
-            py_order, OR df.sort_values(by=['col1', 'col2'])
+            py_order OR df.sort_values(by=['col1', 'col2'])
             https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.sort_values.html
             type returned is an integer vector
     runmed: equivalent to pandas.Series.rolling(window (int)).median() reference:
@@ -69,6 +69,11 @@ Functions to translate:
 
     which:
         Given a boolean vector, returns the indices where True
+
+    runmed: Computes running median on vector, and if endrule="constant", it means it sets
+            the end values which can't be computed due to being outside the
+            vector to the first value which can be computed (if on the left) or
+            to the last value which can be computed (if on the right)
         
    
 """
@@ -112,6 +117,8 @@ def py_order(srs_a, reverse=False, tie_breaker=None):
 
 
     if tie_breaker is None:
+        if isinstance(srs_a, list):
+            srs_a = pd.Series(srs_a)
         z = srs_a.sort_values() 
     else:
         if len(srs_a) != len(tie_breaker):
@@ -148,7 +155,7 @@ def py_match(list_a, list_b):
         e.g. 
         list_a = ["a", "b", "c", "d", "e"]
         list_b = ["f", "a", "c", "b", "d", "d"]
-        result: [1, 3, 2, 4, None]
+        result: [1, 3, 2, 4, np.nan]
     """
     return [list_b.index(val) if val in list_b else np.nan for val in list_a]
 
@@ -233,7 +240,12 @@ def py_table(list_of_str, return_unique=False):
 def py_aggregate(dataframe_A, group_by_label, func='sum',
                 reset_index_bool=False):
     """
-    
+    Args:
+        dataframe_A (pd Dataframe)
+        group_by_label (str): The column over which we're grouping
+        func (str): Fixed vocab, one of ['sum', 'mean', 'median']
+        reset_index_bool: Move index back to being a column and have
+                        index numbered from 0 to numrows?
     Question: 
         Does this return a DataFrame/ Series with the new unique
         group by labels as the 'index' of the dataframe?
@@ -284,7 +296,7 @@ def py_aggregate(dataframe_A, group_by_label, func='sum',
     elif func == 'median':
         res = gb.median()
     else:
-        raise Exception("Func must be str from ['sum', 'mean']")
+        raise Exception("Func must be str from ['sum', 'mean', 'median']")
         
     if reset_index_bool:
         return res.reset_index()

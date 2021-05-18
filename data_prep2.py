@@ -628,7 +628,8 @@ def getGenesUsedList(t0tot, strainsUsed, all_df, minT0Gene, genesUsed_list,
         # t0_gN_used is  
         t0_gN_used = py_aggregate(pre_t0_gn_used, 
                                   'locusId',
-                                  func='sum'
+                                  func='sum',
+                                  reset_index_bool=True
                                  )
         if debug_print_bool:
             t0_gN_used.to_csv("tmp/py_t0_gN_used.tsv", index=False, sep="\t")
@@ -855,7 +856,8 @@ def get_non_locusIdSumsForGene12(minT0GeneSide, t0tot, all_df, stUsed_and_good_f
     # crt is a dataframe with unique locusIds and summed up columns for the rest of the values
     crt = py_aggregate(crtt0tot,
                       'locusId',
-                      'sum')
+                      'sum',
+                      reset_index_bool=True)
 
     # Get all columns and rows besides locusId and take their minimum
     # Returns a pandas series with minimum of each row 

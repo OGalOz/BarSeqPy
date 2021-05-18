@@ -34,9 +34,9 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
             se (float) Standard Error dataframe with one column per setindexname
             t: (float) t-statistic dataframe with one column per setindexname
             tot1 (int or nan) dataframe with one column per setindexname
-            tot1_0 (int or nan) dataframe with one column per setindexname
+            tot0_1 (int or nan) dataframe with one column per setindexname
             tot2 (int or nan) dataframe with one column per setindexname
-            tot2_0 (int or nan) dataframe with one column per setindexname
+            tot0_2 (int or nan) dataframe with one column per setindexname
             tot (int or nan) dataframe with one column per setindexname
             tot0 (int or nan) dataframe with one column per setindexname
             version (str)
@@ -48,7 +48,7 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
                 gene_fit: DataFrame, contains cols:
                     fit, fitNaive, fit1, fit2, fitnorm, fitnorm1, fitnorm2, fitRaw
                     locusId, n, nEff, pseudovar, sumsq, sd, sdNaive, se, t, tot1
-                    tot1_0, tot2, tot2_0, tot, tot0
+                    tot0_1, tot2, tot0_2, tot, tot0
                 strain_fit: pandas Series (float) with a computation applied to values
                 strain_se: pandas Series (float) with a computation applied to values
         strainsUsed pandas Series(list<bool>):  

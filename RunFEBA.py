@@ -74,6 +74,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
                           debug_bool=False,
                           meta_ix=meta_ix)
 
+        logging.info("\n\n\nRunning Section 1 - Data Prep 1\n\n\n")
         exps_df, all_df, genes_df, genesUsed_list, ignore_list = res_dp1
 
         breakpoint1(exps_df, all_df, genes_df, genesUsed_list, ignore_list,
@@ -86,6 +87,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             res_from_dir = import_start_point2_data_from_dir("tmp/BP1")
             all_df, exps_df, genes_df, genesUsed_list, ignore_list = res_from_dir
 
+        logging.info("\n\n\nRunning Section 2 - Data Prep 2\n\n\n")
         # Part 2 - Data Preparation 2; Control Experiments
         res_dp2 = data_prep_2(exps_df, all_df, genes_df, genesUsed_list,
                     ignore_list, minSampleReads=2*10e4,
@@ -104,7 +106,6 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
                 t0_gN, t0tot, central_insert_bool_list,
                 all_df, exps_df, genes_df,
                 expsT0, num_vars_d)
-        stop(107)
     if start_point <= 3:    
         if start_point == 3:
             res_from_dir = import_start_point3_data_from_dir("tmp/BP2")
@@ -112,12 +113,14 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             central_insert_bool_list, t0_gN, t0tot = res_from_dir[3:6]
             all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
 
+        logging.info("\n\n\nRunning Section 3 - Analysis 1\n\n\n")
         GeneFitResults = analysis_1(all_df, exps_df, genes_df,
                                 expsT0, t0tot, 
                                 genesUsed_list, genesUsed_list12, strainsUsed_list, 
                                 central_insert_bool_list, 
                                 minGenesPerScaffold=10, meta_ix=7,
-                                debug=False, nDebug_cols=16)
+                                debug=False, nDebug_cols=4,
+                                starting_debug_col=10)
         breakpoint3("tmp/BP3", GeneFitResults)
 
     if start_point <= 4:
@@ -129,7 +132,8 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             genesUsed_list, strainsUsed_list, genesUsed_list12 = res_from_dir[0:3]
             central_insert_bool_list, t0_gN, t0tot = res_from_dir[3:6]
             all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
-       
+      
+        logging.info("\n\n\nRunning Section 4 - Analysis 2\n\n\n")
         gene_fit_d, CrudeOp_df = analysis_2(GeneFitResults, exps_df, all_df, 
                                             genes_df, central_insert_bool_list,
                                             strainsUsed_list, t0tot, 
@@ -150,6 +154,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             central_insert_bool_list, t0_gN, t0tot = res_from_dir[3:6]
             all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
 
+        logging.info("\n\n\nRunning Section 5- Analysis 3\n\n\n")
         gene_fit_d = analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
                genesUsed_list, strainsUsed_list, genesUsed_list12,
                t0_gN, t0tot, CrudeOp_df, central_insert_bool_list,
@@ -165,6 +170,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
             gene_fit_d['genesUsed'] = genesUsed_list
 
+        logging.info("\n\n\nRunning Section 6 - FEBA Save Tables\n\n\n")
         FEBA_Save_Tables(gene_fit_d, genes_df, org_str,
                          "tmp/Output", exps_df, writeImage=False)
 

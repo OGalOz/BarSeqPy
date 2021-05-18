@@ -58,9 +58,9 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
                         se (float) Standard Error
                         t: (float) t-statistic
                         tot1 (int or nan)
-                        tot1_0 (int or nan)
+                        tot0_1 (int or nan)
                         tot2 (int or nan)
-                        tot2_0 (int or nan)
+                        tot0_2 (int or nan)
                         tot (int or nan)
                         tot0 (int or nan)
                    strain_fit: pandas Series (float) 
@@ -106,9 +106,9 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
             se (float) Standard Error dataframe with one column per setindexname
             t: (float) t-statistic dataframe with one column per setindexname
             tot1 (int or nan) dataframe with one column per setindexname
-            tot1_0 (int or nan) dataframe with one column per setindexname
+            tot0_1 (int or nan) dataframe with one column per setindexname
             tot2 (int or nan) dataframe with one column per setindexname
-            tot2_0 (int or nan) dataframe with one column per setindexname
+            tot0_2 (int or nan) dataframe with one column per setindexname
             tot (int or nan) dataframe with one column per setindexname
             tot0 (int or nan) dataframe with one column per setindexname
             version (str)
@@ -225,9 +225,9 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
                     se (float) Standard Error
                     t: (float) t-statistic
                     tot1 (int or nan)
-                    tot1_0 (int or nan)
+                    tot0_1 (int or nan)
                     tot2 (int or nan)
-                    tot2_0 (int or nan)
+                    tot0_2 (int or nan)
                     tot (int or nan)
                     tot0 (int or nan)
                strain_fit: pandas Series (float) 
@@ -251,9 +251,9 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
             se (float) Standard Error dataframe with one column per setindexname
             t: (float) t-statistic dataframe with one column per setindexname
             tot1 (int or nan) dataframe with one column per setindexname
-            tot1_0 (int or nan) dataframe with one column per setindexname
+            tot0_1 (int or nan) dataframe with one column per setindexname
             tot2 (int or nan) dataframe with one column per setindexname
-            tot2_0 (int or nan) dataframe with one column per setindexname
+            tot0_2 (int or nan) dataframe with one column per setindexname
             tot (int or nan) dataframe with one column per setindexname
             tot0 (int or nan) dataframe with one column per setindexname
             version (str)
@@ -273,7 +273,7 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
     # other_col_names should be:
     #     fit, fitNaive, fit1, fit2, fitnorm1, fitnorm2, fitRaw
     #     locusId, n, nEff, pseudovar, sumsq, sd, sdNaive, se, t, tot1
-    #     tot1_0, tot2, tot2_0, tot, tot0
+    #     tot0_1, tot2, tot0_2, tot, tot0
     other_col_names.remove('locusId')
     if "Unnamed: 0" in other_col_names:
         other_col_names.remove("Unnamed: 0")
@@ -354,9 +354,9 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
             se (float) Standard Error dataframe with one column per setindexname
             t: (float) t-statistic dataframe with one column per setindexname
             tot1 (int or nan) dataframe with one column per setindexname
-            tot1_0 (int or nan) dataframe with one column per setindexname
+            tot0_1 (int or nan) dataframe with one column per setindexname
             tot2 (int or nan) dataframe with one column per setindexname
-            tot2_0 (int or nan) dataframe with one column per setindexname
+            tot0_2 (int or nan) dataframe with one column per setindexname
             tot (int or nan) dataframe with one column per setindexname
             tot0 (int or nan) dataframe with one column per setindexname
             version (str)
@@ -430,7 +430,7 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
 		mad12 = apply(abs(fit$lrn1-fit$lrn2), 2, median, na.rm=T),
 		# consistency of log2 counts for 1st and 2nd half, for sample and for time0
 		mad12c = apply(abs(log2(1+fit$tot1) - log2(1+fit$tot2)), 2, median, na.rm=T),
-		mad12c_t0 = apply(abs(log2(1+fit$tot1_0) - log2(1+fit$tot2_0)), 2, median, na.rm=T),
+		mad12c_t0 = apply(abs(log2(1+fit$tot0_1) - log2(1+fit$tot0_2)), 2, median, na.rm=T),
 		opcor = apply(fit$lrn, 2, function(x) paircor(crudeOpGenes[crudeOpGenes$bOp,], fit$g, x, method="s")),
 		adjcor = sapply(names(fit$lrn), function(x) paircor(adjDiff, fit$g, fit$lrn[[x]], method="s")),
 		gccor = c( cor(fit$lrn, genes_df$GC[ match(fit$g, genes_df$locusId) ], use="p") ),
@@ -447,7 +447,7 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
         "cor12": [lrn1[col_name].corr(lrn2[col_name]) for col_name in lrn1.head()],
         "mad12": (lrn1-lrn2).abs().median(),
         "mad12c": (np.log2(1 + gene_fit_d['tot1']) - np.log2(1 + gene_fit_d['tot2'])).abs().median(),
-        "mad12c_t0": (np.log2(1 + gene_fit_d['tot1_0']) - np.log2(1 + gene_fit_d['tot2_0'])).abs().median(),
+        "mad12c_t0": (np.log2(1 + gene_fit_d['tot0_1']) - np.log2(1 + gene_fit_d['tot0_2'])).abs().median(),
         # Remember crudeOpGenes['bOp'] is a list of bools
         "opcor": [paircor(crudeOpGenes[crudeOpGenes['bOp']], 
                   gene_fit_d['g'], 
@@ -599,6 +599,7 @@ def CrudeOp(genes_df, dbg_out_file=None, dbg=False):
         print(f"Num trues in bool list: {st1_eq_st2.count(True)}")
     new_df = new_df[st1_eq_st2]
 
+    # parallel minimum
     paralmin = []
     for i in range(len(new_df['begin1'])):
         paralmin.append(min(abs(new_df['begin1'].iat[i] - new_df['end2'].iat[i]), 
@@ -940,7 +941,7 @@ def create_strain_lrn(strain_lr, gdiff, strains, strainToGene, dbg_print=False):
     # We iterate over every column in both dataframes strain_lr & gdiff
     for i in range(tot_num_cols):
         strain_lr_set_index_name = list(strain_lr.columns)[i]
-        print(f"Currently working on column {strain_lr_set_index_name}, {i}/{tot_num_cols}")
+        print(f"Currently working on column {strain_lr_set_index_name}, {i + 1}/{tot_num_cols}")
         gdiff_set_index_name = list(gdiff.columns)[i]
         if strain_lr_set_index_name != gdiff_set_index_name:
             raise Exception("Columns are not matching each other."

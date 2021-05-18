@@ -1,4 +1,16 @@
     TODO:
+        
+        Line 348 in FEBA.R - what is the whole rolling median thing?
+        Why is Standard Deviation computed the way it is?
+        Compare outputs from AvgStrainFitness between Python and R.
+        Should users get the option of computing unedited (but still weighted)
+        fitness values? Without the pseudocounts?
+        Can we just remove all rows from all.poolcount that aren't inserted
+        in genes? Why keep any more than we use? At what point do we stop
+        using all the rows?
+
+
+
         Run . testPy.sh 4
 
         How do you explain the whole 'strain Pseudo Count' and strainFit Weight
@@ -32,6 +44,9 @@
                 reads found.
 
     Function Descriptions:
+        Use 'Rapid Quantification of Mutant Fitness in 
+        Diverse Bacteria by Sequencing Randomly Bar-Coded 
+        Transposons' pages 12-14 as a reference
         create_strain_lrn (analysis2): 
             We take the strain log ratios, which are created in the function 
             'StrainFitness' from analysis1 and we normalize them by finding
@@ -41,12 +56,19 @@
             normalized log ratios, and if those exist at a read, then
             we subtract those instead of the median.
 
+        GeneFitness (analysis1):
+            
+
         AvgStrainFitness (analysis1): Done for each experiment_name
             We take three main input variables:
                 1. exp_used_strains: The used reads values from all_df, 
                     it is a pandas Series of values, whose index is the row number
-                    from all.poolcount where it originated.
-                    length = nAllStrainsCentralGoodGenes*
+                    from all.poolcount where it originated, and whose length is
+                    nAllStrainsCentralGoodGenes*, and the * is there because
+                    it could include strains that are in all the genes
+                    with good insertions, or it could only be the reads
+                    with even stronger gene insertions, where there are
+                    enough reads in both the top and bottom half.
                 2. t0_used: The sum of the t0 reads for this experiment,
                     taken from all_df, and summed over the columns whose
                     experiments are associated with the t0 value for
@@ -72,7 +94,7 @@
             taking the log2 values of exp_used_strains (the experiment original
             reads) and subtracting the log2 values of the time0s for those reads,
             and then doing a median normalization of the difference.
-            So log2(originalreads) - log2(t0reads) = x; mednorm(x).
+            So log2(originalreads) - log2(t0reads) = x; then return mednorm(x).
             BUT we add in the readratio to the original reads and the inverse
             of the readratio to the t0reads. Why?
             Now we create strainPseudoCount. In order to create strainPseudo count,
@@ -108,7 +130,60 @@
             and also subtracting a 'strainFitAdjust' number. But for this
             strainFit, which is adjusted, we don't apply median normalization
             for some reason (?).
-            Now we compute the Standard Deviation (How is this the standard deviation?)
+            Now we compute the Standard Deviation per strain, (How does this 
+            computation give the standard deviation?)
+            Then we get weights per strain, based on the number of reads in the Time0
+            and the experiments. The weights are used to measure strainFitness for
+            a gene more accurately. The strains with less reads are weighted less,
+            and the strains with more reads are weighted higher.
+            Once we have the Standard Deviation per strain, the weights per strain,
+            and the adjusted strain fitness, then we can go on to compute the following
+            values per gene:
+                fitRaw (float): Sum of weighted adjusted fitness scores divided by total weight. 
+                sd (float): Standard Deviation computed fancy way
+                sumsq (float): [Sum of the weighted square of the difference between adjusted fitness 
+                                and fitRaw] divided by total weight.
+                sdNaive (float): Standard Deviation computed in Naive way 
+                n (int): Total number of strains in this gene
+                nEff (float ): The sum of the strain weights in these indeces/ max weight
+                tot (int ): The sum of the experiment reads over the locusID
+                tot0 (int): The sum of the Time0s over the gene
+            We create a dictionary which stores all of these values per gene, and then
+            once we're done computing over all the locusIds, we convert the dictionary
+            into a dataframe, with the columns being the above values (fitRaw,...,tot0).
+            Then we create two new values which are based on the above values over all
+            the genes: 'fit' and 'fitNaive'. 'fit' is the median normalization of 'fitRaw' from
+            each gene, then 'fitNaive' ss a naive computation of fitness based on tot and
+            tot0 (median normalized log2 difference of the two).
+            We return this dataframe called 'fitness_df'.
+       NormalizeByScaffold (analysis1):
+          We create the column 'fitnorm' for main_df from GeneFitness.
+          How:
+          We take the series of locusIds from main_df (which are unique),
+          and find their locations within the series genes_df['locusId'] which are also
+          unique. Then we take the subset of the dataframe genes_df which match
+          to those locations and take its scaffoldId, begin values and locusIds and
+          combine them with the fitness values from AvgStrainFitness, and create
+          a dataframe called tmp_df.
+          Then we group values by scaffoldIds (which are not unique), and get
+          the rows of tmp_df which are associated with that scaffoldId.
+          We check that the total number of rows associated with that scaffoldId
+          pass the threshold 'minToUse'. If it doesn't, we remove the fitness
+          values for those rows. If it does we continue to the next part.
+          Now we take the median of the rows associated with that scaffoldId
+          and subtract it from them (median normalization on a subset of the
+          rows).
+          Then, if the number of rows associated with this scaffoldId pass
+          the window threshold, we take the running median with window size
+          251 of the sorted genes (A running median looks backwards and 
+          forwards the same amount and computes the median using half 
+          the window after and half before, so in this case 125 after and 
+          125 before), and then we subtract that median from those values.
+          Then we also normalize by the mode, and a simple way to 
+          estimate the mode if there aren't repeating values is through
+          the gaussian kernel density estimation function:
+          //rmflight.github.io/post/finding-modes-using-kernel-density-estimates/
+
             
             
 
@@ -156,6 +231,7 @@
             nGenesUsed = (len(genesUsed)) number of rows in genes.GC that we actually use
                         which is equivalent to the number of unique genes
                         that have good insertions in them. (1355 in Keio)
+                        Which is the same as the output fitness and t score dataframes
             nGenesUsed12 = (len(genesUsed12)) number of locusIds with a good amount of 
                             insertions in both halves of 'f' from all_df. Both df1 and df2 
                             in GeneFitness() have this number of rows.
