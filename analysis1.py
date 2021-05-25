@@ -55,7 +55,8 @@ def analysis_1(all_df, exps_df, genes_df,
         starting_debug_col (int): Should we start running experiments at some point
                                   after the first option? E.g. start at experiment 20?
                                   Default is 0, so start at the beginning.
-        nDebug_cols (int): How many columns should we run through
+        nDebug_cols (int or None): How many columns should we run through (int)
+                                    All of them (None)
 
     Returns:
         GeneFitResults: (dict) set_index_names -> gene_strain_fit_result
@@ -63,13 +64,50 @@ def analysis_1(all_df, exps_df, genes_df,
                 gene_fit: DataFrame, contains cols:
                     fit, fitNaive, fit1, fit2, fitnorm, fitnorm1, fitnorm2, fitRaw
                     locusId, n, nEff, pseudovar, sumsq, sd, sdNaive, se, t, tot1
-                    tot1_0, tot2, tot2_0, tot, tot0
+                    tot0_1, tot2, tot2_0, tot, tot0
                 strain_fit: pandas Series (float) with a computation applied to values
                 strain_se: pandas Series (float) with a computation applied to values
+
+    Description:
+        In this part of the analysis, we compute fitness per strain as well as
+        fitness per Gene. The way we do this is that we go through each experiment,
+        which are all the columns in all_df (all.poolcount dataframe) after the
+        metadata columns.
+        The first thing we do is we get a list of all the experiment names, and
+        we place these in a list called 'all_index_names'. We also get the subset
+        of all the strains that are useful for Gene Fitness computations, the
+        number of strains in this subset is the number of 'True's in the list
+        'strainsUsed', so we compute this number and name it 
+        'nAllStrainsCentralGoodGenes'. After that we get the subsets of the 
+        dataframes all_df and t0tot (the Time0 totals summed over all_df) to
+        be used in Gene Fitness computations later.
+        Next, if one wanted to run the computations on a subset of the experiments, 
+        they could give nDebug_cols=N where N is the number of experiments
+        they would like to run analysis on.
+        Finally, before running the analysis on each selected experiment,
+        we find the subset of the good strains which were inserted in 
+        the first half of the genes (in other words if the insertion occured
+        before the halfway point of the gene). We call this array of booleans
+        use1.
+        Now we run the analysis on each experiment 
+        (number of experiments = nDebug_cols)
+        and each analysis returns a dictionary with 3 values: gene_fit (a pd dataframe
+        with gene fitness values), strain_fit (a pd series with strain fitness values),
+        and strain_se (a pd series with strain standard error values). Note that the
+        number of rows in the dataframe gene_fit is equivalent to the total number
+        of usable genes, whereas the two series are the same length, and are equivalent
+        to the total number of strains in all.poolcount (much longer than the total
+        number of usable genes).
+        In a larger dictionary called, GeneAndStrainFitResults,
+        we create a key with the current experiment, and the value is the dictionary
+        mentioned above. In other words, we get a dictionary with keys 
+        ['gene_fit', 'strain_fit', 'strain_se']
+        within a dictionary called GeneAndStrainFit with keys being the experiment
+        names, and each experiment is associated with one of the smaller dictionaries.
+        We return this dictionary GeneAndStrainFitResults.
     """
 
     # The bulk of the program occurs here: We start computing values
-    GeneFitResults = {}
     all_index_names = list(all_df.columns)[meta_ix:]
     nAllStrainsCentralGoodGenes = list(strainsUsed).count(True)
     if nAllStrainsCentralGoodGenes == 0:
@@ -89,6 +127,7 @@ def analysis_1(all_df, exps_df, genes_df,
     # use1 refers to the strains inserted in the first half of the gene
     use1 = [bool(x < 0.5) for x in all_df_used['f']]
 
+    GeneAndStrainFitResults = {}
     print(f"Running through {num_ix_remaining}/{len(all_index_names)} indices")
     for set_index_name in all_index_names[starting_debug_col: starting_debug_col + nSetIndexToRun]:
         print(f"Currently working on index {set_index_name}")
@@ -97,15 +136,18 @@ def analysis_1(all_df, exps_df, genes_df,
         if set_index_name is not None:
             # We choose the right column
             exp_used_strains = all_df_used[set_index_name]
-            gene_strain_fit_result = gene_strain_fit_func(set_index_name, 
+            # below is a dict with 3 keys: gene_fit (df), strain_fit (srs), strain_se (srs)
+            gene_strain_fit_result_d = gene_strain_fit_func(set_index_name, 
                                                           exps_df, exp_used_strains, 
                                                           genes_df, expsT0,
                                                           t0tot_used, 
                                                           genesUsed, genesUsed12, minGenesPerScaffold,
                                                           all_df_used,
-                                                          use1)
-            if gene_strain_fit_result is not None:
-                GeneFitResults[set_index_name] = gene_strain_fit_result
+                                                          use1,
+                                                          all_df)
+
+            if gene_strain_fit_result_d is not None:
+                GeneAndStrainFitResults[set_index_name] = gene_strain_fit_result_d
             else:
                 print(f"For index {set_index_name} result was None")
 
@@ -116,13 +158,13 @@ def analysis_1(all_df, exps_df, genes_df,
         print(f"Current time: {datetime.now().strftime('%H:%M:%S')} PST.")
 
     # If there are no 
-    if len(GeneFitResults.keys()) == 0:
+    if len(GeneAndStrainFitResults.keys()) == 0:
         raise Exception("All comparisons failed.")
 
     if debug:
         print("passed GeneFitness section")
 
-    return GeneFitResults
+    return GeneAndStrainFitResults
 
 
 
@@ -130,28 +172,43 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
                          genes_df, expsT0,
                          t0tot_used, 
                          genesUsed, genesUsed12, minGenesPerScaffold,
-                         all_df_used, use1
+                         all_df_used, use1,
+                         all_df
                          ):
     """
     Description:
         This function is run for every single set_index_name in all_df, and that set_index_name
         is passed into this function as the first argument, 'set_index_name'. All other arguments
         are not changed at all when this function is called and are documented elsewhere. 
-        Note that all_df_used is a subset
-        of all_df (all.poolcount) in which the barcode was inserted within a gene and within the
-        central 80% of the gene and the locusId is found in genesUsed. There may be other thresholds.
-        t0tot_used has the exact same number of rows as all_df_used.
-
-        Then the majority of the work of the function is done within
-        creating the variable 'gene_fit' while calling the function 'GeneFitness'.
-
-        What happens in this function?
-            First we find if this value is part of a t0set.
-            If not, we get the related t0 set.
+        We get results for GeneFitness (fitness per Gene), and Strain Fitness (fitness
+        per strain). GeneFitness gives a dataframe whose number of rows is the number of genes
+        in genesUsed. StrainFitness returns two series whose length is the same as the total
+        number of strains in all.poolcount. StrainFitness is a very simple function that gives
+        log2 ratios and standard error, each of which take only a line to compute. On the other
+        hand, GeneFitness is a very complicated function in which multiple normalizations and
+        statistical computations are done in order to make the GeneFitness a more reasonable
+        value.
+        Within this function, we first find the associated t0set name related to our current 
+        experiment, and get the reads and t0 read sums. If our current experiment
+        (denoted by the set_index_name) is a Time0 experiment, then we subtract the current
+        experiment values from the sum for this Time0, since the sum for this Time0 is
+        an aggregation over the several experiments associated with this Time0.
+        If this is the only Time0 experiment associated with this Time0, then we
+        skip computation for it. At this point, we get the total StrainFitness
+        values, which, as mentioned above, returns two series whose length is the 
+        same as the total number of strains in all.poolcount. These two series are
+        StrainFitness and Standard Error per strain. We don't use these two series
+        further within this function, now we move on to computing per Gene Fitness.
+        When computing Gene Fitness, we use a subset of all.poolcount in which 
+        the strains were inserted into genes and in good locations and in abundant 
+        enough amounts over genes and over scaffolds. GeneFitness returns a Dataframe,
+        and is a very complicated function which is described in its own Description
+        section.
 
         
+        
     Args:
-        set_index_name: (str) Name of set and index from all_df (all.poolcount file)
+        set_index_name: (str) Name of experiment (set and index) from all_df (all.poolcount file)
 
         exps_df: Data frame holding exps file (FEBABarSeq.tsv)
 
@@ -175,6 +232,8 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
                                             Num rows is nAllStrainsCentral 
         use1: boolean list for the all_df_used with 0.1 < f <0.5 is True, otherwise false,
                 Length is nAllStrainsCentralGoodGenes
+        all_df: Just for Strain Fitness, the entire all dataframe not excluding any strains
+        tot0: Just for Strain Fitness, the entire tot0 dataframe not excluding any strains
 
     Created vars:
         to_subtract: a boolean which says whether the 'short' name
@@ -191,7 +250,7 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
             gene_fit: DataFrame, contains cols:
                 fit, fitNaive, fit1, fit2, fitnorm, fitnorm1, fitnorm2, fitRaw
                 locusId, n, nEff, pseudovar, sumsq, sd, sdNaive, se, t, tot1
-                tot1_0, tot2, tot2_0, tot, tot0
+                tot0_1, tot2, tot2_0, tot, tot0
             strain_fit: pandas Series (float) with a computation applied to values
             strain_se: pandas Series (float) with a computation applied to values
 
@@ -229,8 +288,8 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
     if len(cntrl) < 1:
         raise Exception(f"No Time0 experiments for {set_index_name}, should not be reachable")
 
-    strain_fit_ret_d = StrainFitness(exp_used_strains, 
-                      all_df_used[cntrl].sum(axis=1),
+    strain_fit_ret_d = StrainFitness(all_df[set_index_name], 
+                      all_df[cntrl].sum(axis=1),
                       debug_print=False
                       )
 
@@ -332,6 +391,36 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
         # as well as some other values from AvgStrainFitness(), notably sdNaive,
         # which is a different (best-case) estimate of the standard error.
 
+
+    Returns:
+        main_df (pandas DataFrame): Contains cols:
+
+            locusId <str>: The locusId to which this row is associated.
+            fit: fitRaw column normalized by Median 
+            fitNaive (float): Median normalized log2 difference between tot0 and tot 
+            fitRaw (float): Sum of weighted adjusted fitness scores divided by total weight. 
+            n (int): Total number of strains in this locusId
+            nEff (float ): The sum of the strain weights in these indeces/ max weight
+            pseudovar (float): [ (median(abs(fit1 - fit2))^2)/Constant ] * (sdNaive/(median(sdNaive[genesUsed12])^2))
+            sd (float): Standard Deviation computed fancy way
+            sumsq (float): [Sum of the weighted square of the difference between adjusted fitness 
+                            and fitRaw] divided by total weight.
+            sdNaive (float): Standard Deviation computed in Naive way 
+            tot (int ): The sum of the experiment reads over the locusID
+            tot0 (int): The sum of the Time0s over the locusId
+            se (float) Standard Error
+            t: (float) t-statistic
+            fit1 (float): For every locusId found in genesUsed12, we give the fit value of first_half_df
+            fit2 (float): For every locusId found in genesUsed12, we give the fit value of second_half_df
+            fitnorm (float): Scaffold normalized fit scores (median and mode)
+            fitnorm1 (float): fit1 + fitnorm - fit
+            fitnorm2 (float): fit2 + fitnorm - fit
+            tot1 (int or nan): For every locusId found in genesUsed12, we give the tot value of first_half_df
+            tot0_1 (int or nan): For every locusId found in genesUsed12, we give the tot0 value of first_half_df
+            tot2 (int or nan): For every locusId found in genesUsed12, we give the tot value of second_half_df
+            tot0_2 (int or nan): For every locusId found in genesUsed12, we give the tot0 value of second_half_df
+
+
     Description:
         This runs on every experiment (set + Index name).
         Our four primary inputs are the exps_used_strains (current experiment
@@ -371,41 +460,18 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
         Where fitnorm and fit come from the main_df dataframe, and fit1 are the fit
         scores for first_half_df. fitnorm2 is computed similarly just with fit2 instead of
         fit1.
-        When it comes to computing 'pseudovar', 'se' and 't', things get complicated.
+        When it comes to the reasoning behind computing 'pseudovar', 'se' and 't', 
+        things get complicated. Explained separately. 
+        We return main_df, which has the same number of rows as nGenesUsed, with 
+        the values associated with first_half or second_half insertions
+        included, but the ones with no locusId associated are nan. In other words,
+        for the columns with '1' or '2' at the end of their name, they are
+        only present for locusIds that have abundant enough insertions on
+        both halves of the genes, and when there is a gene in main_df
+        that doesn't pass that threshold, they don't have any values. Thus,
+        they only have real values where the genes have good two sided
+        abundance, and otherwise their values are nan.
 
-        
-            
-
-
-
-
-
-    Returns:
-        main_df (pandas DataFrame): Contains cols:
-            locusId (str),
-            fit (float): 
-            fitNaive (float):
-            fitRaw (float)
-            locusId (str): The locusIds
-            n (int): 
-            nEff (float)
-            pseudovar (float): [ (median(abs(fit1 - fit2))^2)/Constant ] * (sdNaive/(median(sdNaive[genesUsed12])^2))
-            sumsq (float):
-            sd (float)
-            sdNaive (float)
-            se (float) Standard Error
-            t: (float) t-statistic
-            tot (int or nan)
-            tot0 (int or nan)
-            fit1 (float): For every locusId found in genesUsed12, we give the fit value of first_half_df
-            fit2 (float): For every locusId found in genesUsed12, we give the fit value of second_half_df
-            fitnorm (float): Scaffold normalized fit scores (median and mode)
-            fitnorm1 (float): fit1 + fitnorm - fit
-            fitnorm2 (float): fit2 + fitnorm - fit
-            tot1 (int or nan): For every locusId found in genesUsed12, we give the tot value of first_half_df
-            tot0_1 (int or nan): For every locusId found in genesUsed12, we give the tot0 value of first_half_df
-            tot2 (int or nan): For every locusId found in genesUsed12, we give the tot value of second_half_df
-            tot0_2 (int or nan): For every locusId found in genesUsed12, we give the tot0 value of second_half_df
     """
 
     
@@ -989,9 +1055,6 @@ def StrainFitness(all_cix_series,
                 all_cntrl_sum,
                 debug_print=False):
     """
-    simple log-ratio with pseudocount (of 1) and normalized so each scaffold has a median of 0
-    note is *not* normalized except to set the total median to 0
-    
     Args:
         all_cix_series (pandas Series): The current experiment name column of values from all_df_used 
                                         length = nAllStrainsCentralGoodGenes
@@ -1007,22 +1070,21 @@ def StrainFitness(all_cix_series,
             Same length as inputs: nAllStrainsCentralGoodGenes
         se: pandas Series (float) with computations applied to values
             Same length as inputs: nAllStrainsCentralGoodGenes
+
+
+    Description:
+        fit: Median-Normalized log2 difference between Current experiment and the time0s
+        se: Standard Error of the values 
+        "
+        # simple log-ratio with pseudocount (of 1) and normalized so each scaffold has a median of 0
+        # note is *not* normalized except to set the total median to 0
+        "
     """
 
     sf_fit = mednorm( (1+all_cix_series).apply(np.log2) - (1 + all_cntrl_sum).apply(np.log2) )
     sf_se = (1/(1 + all_cix_series) + 1/(1 + all_cntrl_sum)).apply(math.sqrt)/ np.log(2)
 
 
-    if debug_print:
-        print("Input Series to check:")
-        print(all_cix_series)
-        print("Input Control Sum Series to check:")
-        print(all_cntrl_sum)
-        print("Computed strain fitness")
-        print(sf_fit)
-        print("Computed strain standard error")
-        print(sf_se)
-        raise Exception("Stopping for debugging.")
 
     return {
             "fit": sf_fit,
@@ -1080,7 +1142,9 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
         //rmflight.github.io/post/finding-modes-using-kernel-density-estimates/
 
     """
-
+    
+    # Initialize the new set of values
+    NormalizedFitValues = fitValues.copy(deep=True)
 
     if cdebug:
         print(f"locusIds from dataframe: {len(list(locusIds))}",
@@ -1095,7 +1159,7 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
     matched_genes_df.reset_index(inplace=True)
 
     tmp_df = pd.DataFrame.from_dict({
-                        "fit": fitValues,
+                        "fit": NormalizedFitValues,
                         "scaffoldId": matched_genes_df['scaffoldId'],
                         "begin": matched_genes_df['begin'],
                         "locusId": matched_genes_df['locusId']
@@ -1104,8 +1168,8 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
     perScaffoldRows = tmp_df.groupby(by='scaffoldId').indices
 
     '''
-    # py_split returns groupings of numerical iloc fitValues grouped by the scaffoldIds
-    perScaffoldRows = py_split(pd.Series(list(range(0, len(fitValues)))), 
+    # py_split returns groupings of numerical iloc NormalizedFitValues grouped by the scaffoldIds
+    perScaffoldRows = py_split(pd.Series(list(range(0, len(NormalizedFitValues)))), 
                                list(matched_genes_df['scaffoldId']), 
                                typ='indices')
     '''
@@ -1118,22 +1182,22 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
             print(rows)
         if len(rows) < minToUse:
             if cdebug:
-                print("Removing " + str(len(rows)) + " fitValues for " + scaffoldId)
-            fitValues[rows] = np.nan 
+                print("Removing " + str(len(rows)) + " NormalizedFitValues for " + scaffoldId)
+            NormalizedFitValues[rows] = np.nan 
         else:
-            med = fitValues[rows].median()
+            med = NormalizedFitValues[rows].median()
             if cdebug:
                 print("Subtracting median for " + scaffoldId + " " + str(med))
-            fitValues[rows] = fitValues[rows] - med
+            NormalizedFitValues[rows] = NormalizedFitValues[rows] - med
 
             if len(rows) >= window:
                 if cdebug:
                     print("Num rows: {len(rows)} passed window {window}")
-                # srtd_begs is a list of indexes for the sorted begin fitValues for this scaffold
+                # srtd_begs is a list of indexes for the sorted begin NormalizedFitValues for this scaffold
                 srtd_begs = py_order(tmp_df.iloc[rows]['begin'])
                  
                 # center=True converts rolling to running (centered median)
-                runmds = fitValues[rows[srtd_begs]].rolling(window, center=True).median()
+                runmds = NormalizedFitValues[rows[srtd_begs]].rolling(window, center=True).median()
                 # Here we set the nan values to the first and last valid indexes
                 first_non_na_index = runmds.first_valid_index()
                 last_non_na_index = runmds.last_valid_index()
@@ -1147,22 +1211,22 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
                 if cdebug:
                     print("Subtract smoothed median for " + scaffoldId + ". max effect is " + \
                          f"{max(runmds) - min(runmds)}")
-                # Changing fitValues of the pandas series by the running median
-                fitValues[rows[srtd_begs]] = fitValues[rows[srtd_begs]] - runmds[srtd_begs]
+                # Changing NormalizedFitValues of the pandas series by the running median
+                NormalizedFitValues[rows[srtd_begs]] = NormalizedFitValues[rows[srtd_begs]] - runmds[srtd_begs]
     
                 if subtract_mode:
                     # We use density function to estimate mode 
-                    dns = stats.gaussian_kde(fitValues[rows].dropna())
-                    print(list(fitValues[rows]))
-                    cmax, cmin = fitValues[rows].max(), fitValues[rows].min()
+                    dns = stats.gaussian_kde(NormalizedFitValues[rows].dropna())
+                    print(list(NormalizedFitValues[rows]))
+                    cmax, cmin = NormalizedFitValues[rows].max(), NormalizedFitValues[rows].min()
                     estimate_x = [cmin + (((cmax - cmin)/512)*i) for i in range(512)]
                     estimate_y = dns.evaluate(estimate_x)
                     mode = estimate_x[list(estimate_y).index(max(estimate_y))]
                     if cdebug:
                         print("Subtract mode for " + scaffoldId + " which is at " + str(mode))
-                    fitValues[rows] = fitValues[rows] - mode
+                    NormalizedFitValues[rows] = NormalizedFitValues[rows] - mode
 
-    return fitValues
+    return NormalizedFitValues
 
 
 def mednorm(pd_series):

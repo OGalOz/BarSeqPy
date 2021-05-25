@@ -130,7 +130,7 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
             normalized head. Meaning we only take the experiments 
             that passed the thresholds necessary to have analysis
             performed on them. We take these rows from the dataframe
-            'exps_df' but only the columns "name", "short", and "t0set",
+            'exps_df' but only the columns 'name', 'short', and 't0set',
             all other columns we ignore.
         Next we run FitReadMetrics and FitQuality in order to add 
             more columns to our Quality DataFrame.
@@ -138,64 +138,17 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
             for the following 3 values: Total Reads, Reads pastEnd,
             reads with good insertions. We return a dataframe
             where each row is an experiment, and the columns
-            are the above 3 categories, named "nMapped", "nPastEnd",
-            and "nGenic".
+            are the above 3 categories, named nMapped, nPastEnd,
+            and nGenic.
         In FitQuality we create 12 metrics based on correlations
-            and finding adjacent pairs of genes or genes that are
-            expected to be in the same operon based on their distance.
-
-            The values it computes are: (for the following, tot is sum of reads over a gene)
-                "nUsed" (int): Sum over all locusIds of tot per experiment
-                "gMed" (int): Median of all locusIds over tot per experiment
-                "gMean" (float): Mean of all locusIDs over tot per experiment
-                "gMedt0" (int): Median over the time0 totals per experiment
-                "cor12" (float): Correlation of normalized log ratios between first and second half 
-                         gene insertion locations per experiment
-                "mad12" (float): Medians of the Absolute values of the differences between first and second half
-                            normalized log ratios.
-                "mad12c" (float): Median of some statistic over all experiments
-                "mad12c_t0" (float): Same as above but over the time0s
-                "opcor" (float): Correlation between normalized log ratios of pairs of genes predicted to be 
-                         in the same operon per experiment
-                "adjcor" (float): Correlation between normalized log ratios of pairs of adjacent genes per experiment
-                "gccor" (float): Correlation between normalized log ratios of genes and their GC percentage per experiment
-                "maxFit" (float): The maximum normalized log ratio value per experiment
-            For more details on what it does refer to the function description (FitQuality) itself.
+        and finding adjacent pairs of genes or genes that are
+        expected to be in the same operon based on their distance.
+        For more details on what it does refer to the function itself.
         We combine the initialized Quality DataFrame, the Fit Read
         Metrics DataFrame and the FitQuality DataFrame and that's
-        our current Quality DataFrame, which contains 19 (or possibly 18) columns,
+        our final Quality DataFrame, which contains 19 (or possibly 18) columns,
         and the number of rows is equal to the total number of 
         good experiments (so it varies per run).
-        Now we go through each experiment in the Quality DataFrame (each
-        row) and measure whether certain column values pass thresholds in 
-        order to define the experiment's status. We create a status for
-        each experiment, and if all of the values are in a good range,
-        the experiment is given the status "OK". Then we create a column
-        called 'u', in which we go through each experiment, and if it's 
-        status is "OK", then we give it the value True, otherwise it's
-        given the value False. So 'u' contains whether the experiment
-        has a status that passed. We add the column 'u' to the Quality
-        DataFrame, making it have 20 columns total.
-        Now we shift our focus to the 'strains' DataFrame. First,
-        we only take the metadata columns from all.poolcount,
-        meaning the columns:
-        'barcode', 'rcbarcode', 'scaffold', 'strand', 'pos', 'locusId', 'f'
-        and add new columns to it:
-        'used': which strains were used to compute Gene Fitness
-        'enoughT0': which strains had a high enough Mean within T0s
-
-        Now we create two important dataframes:
-        strain_lr and strain_se: Both of which have the
-            same length (num rows) as all.poolcount. Both simply
-            take the values computed in the function
-            StrainFitness (in analysis1) and turn them into 
-            dictionaries with experiment names as the column 
-            names and the values as the columns beneath them.
-
-        Next we normalize the strain fitness values (creating
-        the dataframe 'strain_lrn').
-
-        
 
 
         
@@ -247,21 +200,25 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     # HERE
     #DEBUG:
     #gene_fit_d['q'].to_csv("tmp/py_gene_fit_q2.tsv", sep="\t")
-    # status is a pandas series of str, should be exa
+    # status is a pandas series of str
     status = FEBA_Exp_Status(gene_fit_d['q'], dbg_prnt=False)
-
     # We get a list of status is ok + False for the rows of q that surpass length of status
-    gene_fit_d['q']['u'] = [True if status.iat[i] == "OK" else False for i in range(len(status))] 
+    gene_fit_d['q']['u'] = [status.iat[i] == "OK" for i in range(len(status))] + [False]*(gene_fit_d['q'].shape[0] - len(status))
 
-    # Printing out
+
+    #DEBUG:
+    #gene_fit_d['q'].to_csv("tmp/py_gene_fit_q2.tsv", sep="\t")
+
     for s in ["low_count", "high_mad12", "low_cor12", "high_adj_gc_cor"]:
         if list(status).count(s) > 0:
             logging.info(f"{s}: {gene_fit_d['q']['name'][status == s]}")
 
+
     # Creating strains dataframes and values (as opposed to genes)
     strains = all_df.iloc[:,0:meta_ix]
+
     strains['used'] = strainsUsed_list 
-    strains['enoughT0'] = t0tot.mean(axis=1) > minT0Strain
+    strains['enoughT0'] = t0tot.mean(axis=0) > minT0Strain
     gene_fit_d['strains'] = strains
 
 
@@ -271,10 +228,8 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     gene_fit_d['strain_se'] = pd.DataFrame.from_dict(
                             {x:list(GeneFitResults[x]['strain_se']) for x in GeneFitResults.keys()}
                             )
-    
-    # Dataframe, Series
+     
     strain_lrn, strainToGene = normalize_per_strain_values(strains, genes_df, gene_fit_d)
-    # Num rows of strain_lrn = len strainToGene  which is nAllStrains
     gene_fit_d['strain_lrn'] = strain_lrn
     gene_fit_d['strainToGene'] = strainToGene
 
@@ -488,8 +443,7 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
                 "gMed" (int): Median of all locusIds over the sums per locusId per experiment
                 "gMedt0" (int): Median over the time0 totals per experiment
                 "gMean" (float): Mean of all locusIDs over the sums per locusId per experiment
-                "cor12" (float): Correlation of normalized log ratios between first and second half 
-                         gene insertion locations per experiment
+                "cor12" (float): Correlation between first and second half per experiment
                 "mad12" (float): Medians of the Absolute values of the differences between first and second half
                             normalized log ratios.
                 "mad12c" (float): Median of some statistic over all experiments
@@ -524,10 +478,9 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
         "gMed" (int): Median of all locusIds over the sums per locusId per experiment
         "gMedt0" (int): Median over the time0 totals per experiment
         "gMean" (float): Mean of all locusIDs over the sums per locusId per experiment
-        "cor12" (float): Correlation of normalized log ratios between first and second half 
-                         gene insertion locations per experiment
+        "cor12" (float): Correlation between first and second half per experiment
         "mad12" (float): Medians of the Absolute values of the differences between first and second half
-                            normalized log ratios.
+                    normalized log ratios.
         "mad12c" (float): Median of some statistic over all experiments
         "mad12c_t0" (float): Same as above but over the time0s
         "opcor" (float): Correlation between normalized log ratios of pairs of genes predicted to be 
@@ -599,74 +552,50 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
 
 
 
-def FEBA_Exp_Status(quality_df, min_gMed=50, max_mad12=0.5, min_cor12=0.1,
+def FEBA_Exp_Status(inp_df, min_gMed=50, max_mad12=0.5, min_cor12=0.1,
                     max_gccor=0.2, max_adjcor=0.25, dbg_prnt=False):
     """
-    quality_df: A dataframe with cols:
-            from FitReadMetrics:
-                nMapped (int): Sum over all used experiments
-                nPastEnd (int): Sum of pastEnd
-                nGenic (int): Sum of reads within genes
-            from FitQuality:
-                "nUsed" (int): Sum over all locusIds of the sum over the locusId (Sum of sum) per experiment
-                "gMed" (int): Median of all locusIds over the sums per locusId per experiment
-                "gMedt0" (int): Median over the time0 totals per experiment
-                "gMean" (float): Mean of all locusIDs over the sums per locusId per experiment
-                "cor12" (float): Correlation of normalized log ratios between first and second half 
-                         gene insertion locations per experiment
-                "mad12" (float): Medians of the Absolute values of the differences between first and second half
-                            normalized log ratios.
-                "mad12c" (float): Median of some statistic over all experiments
-                "mad12c_t0" (float): Same as above but over the time0s
-                "opcor" (float): Correlation between normalized log ratios of pairs of genes predicted to be 
-                         in the same operon per experiment
-                "adjcor" (float): Correlation between normalized log ratios of pairs of adjacent genes per experiment
-                "gccor" (float): Correlation between normalized log ratios of genes and their GC percentage per experiment
-                "maxFit" (float): The maximum normalized log ratio value per experiment
-            "name": (from exps_df) The name of the experiment (string)
-            "short": (from exps_df) The shorthand name (string)
-            "t0set": (from exps_df) associated control set (Time0) (string)
-            ["num"]: (from_exps_df) experiment number from experiments file
-
-            index labels for dataframe: experiment names (string)
+    inp_df: A dataframe with cols:
+            nMapped (from FitReadMetrics)
+            nPastEnd (from FitReadMetrics)
+            nGenic (from FitReadMetrics)
+            "nUsed": (from FitQuality)
+            "gMed": (from FitQuality)
+            "gMedt0": (from FitQuality)
+            "gMean": (from FitQuality)
+            "cor12": (from FitQuality)
+            "mad12": (from FitQuality)
+            "mad12c": (from FitQuality)
+            "mad12c_t0": (from FitQuality)
+            "opcor": (from FitQuality)
+            "adjcor": (from FitQuality)
+            "gccor":  (from FitQuality)
+            "maxFit": (from FitQuality)
+            "name": (from exps_df)
+            "short": (from exps_df)
+            "t0set": (from exps_df)
+            ["num"]: (from_exps_df)
+            indexes are:
        
     Returns:
         status_list (pandas Series(list<str>)): each status is from: {"OK", "Time0", "low_count", "high_mad12", 
                                                     "low_cor12", "high_adj_gc_cor"}
-                                And each status corresponds to one experiment in quality_df (each row)
+                                And each status corresponds to one experiment in inp_df (each row)
     Description:
-        For each row in the Quality DataFrame, we check the values under 
-        certain columns to decide how to label it's quality.
-        The values we check, in this order, are:
-        1. Is it a Time0? ("Time0")
-        2. Does it have a low Median over the sums over locusIds? ("low_count")
-        3. Does it have a high Median of the differences between first and
-            second half log ratios? ("high_mad12") 
-        4. Is there a low correlation between the first and second half
-            log ratios? ("low_cor12")
-        5. Is the GC correlation high or is the adjacent genes correlation
-            high? ("high_adj_gc_cor")
-        If none of these are True, then the experiment is given the status
-        "OK". Otherwise, it returns the first value for which it is 
-        True in the above questions, the value it returns is the
-        string in parentheses.
-        The whole function returns a pandas series the length of which
-        is the number of rows in quality_df.
-
-        Returns status of each experiment -- "OK" is a non-Time0 experiment that passes all quality metrics
+        # Returns status of each experiment -- "OK" is a non-Time0 experiment that passes all quality metrics
         # Note -- arguably min_cor12 should be based on linear correlation not Spearman.
         # 0.1 threshold was chosen based on Marinobacter set5, in which defined media experiments with cor12 = 0.1-0.2
         # clearly worked, and Kang Polymyxin B (set1), with cor12 ~= 0.13 and they barely worked.
     """
 
     if dbg_prnt:
-        print(quality_df.columns)
-        print(quality_df.shape[0])
-        print(quality_df.index)
+        print(inp_df.columns)
+        print(inp_df.shape[0])
+        print(inp_df.index)
 
     status_list = []
     # Each row corresponds to one experiment
-    for ix, row in quality_df.iterrows():
+    for ix, row in inp_df.iterrows():
         if row["short"] == "Time0":
             status_list.append("Time0")
         elif row["gMed"] < min_gMed:
@@ -684,7 +613,7 @@ def FEBA_Exp_Status(quality_df, min_gMed=50, max_mad12=0.5, min_cor12=0.1,
         print("FEBA_Exp_Status: status_list:")
         print(status_list)
 
-    return pd.Series(data=status_list, index=quality_df.index) 
+    return pd.Series(data=status_list, index=inp_df.index) 
 
 
 def CrudeOp(genes_df, dbg_out_file=None, dbg=False):
@@ -903,342 +832,30 @@ def normalize_per_strain_values(strains, genes_df, gene_fit_d):
         create_strain_lrn
 
     Description:
-        First, for every strain, we find the closest gene from our list of used genes
-        (genes that passed all the thresholds to be used). We call this list 'strainToGene'.
-        Next, we create a dataframe that is the difference between the normalized log
-        ratio values per experiment per gene, and the log ratio values (that are
-        not normalized). Then we normalize the Strain Fitness Values by taking
-        the median difference (from above) per scaffold and subtracting that
-        from the values themselves. We return both the normalized strain fitness
-        values and the closest mapping from strain to Gene.
-
         
         
     """
 
     # strainToGene is pandas Series that has same length as num strains, 
     # and in which each index points to closest gene index by location
-    """
     included_genes = [bool(x in gene_fit_d['g'].values) for x in genes_df['locusId'].values]
     reshuffled_genes = genes_df[included_genes].reset_index()
     print(reshuffled_genes)
-    """
-    strainToGene = NewStrainClosestGenes(strains, 
-                                      gene_fit_d['g'],
-                                      genes_df,
-                                      dbg_prnt=False)
+    strainToGene = StrainClosestGenes(strains, 
+                                      reshuffled_genes,
+                                      dbg_prnt=True)
 
     # Subtract every value from log ratio normalized matrix by log ratio values.
-    lrn_minus_lr = gene_fit_d['lrn'] - gene_fit_d['lr']
+    dif_btwn_lrn_and_lr = gene_fit_d['lrn'] - gene_fit_d['lr']
     strain_lrn = create_strain_lrn(gene_fit_d['strain_lr'], 
-                                   lrn_minus_lr,
+                                   dif_btwn_lrn_and_lr,
                                    strains, strainToGene,
-                                   dbg_print=False)
-
-
+                                   dbg_print=True)
 
     return strain_lrn, strainToGene
 
-def NewStrainClosestGenes(strains, locusIds_used, genes_df, dbg_prnt=False):
-    """
-    
-    Args:
-        strains (pandas DataFrame):
-            has all the meta columns from all_df and all the rows beneath them, (including 'scaffold')
-            additionally contains columns:
-                used: pandas Series(list<bool>): whose length is same as num of Trues in central_insert_bool_list
-                enoughT0: Means of a subset of t0tots who pass the minT0 test.
-                Length = nAllStrains 
-        locusIds_used (pandas Series): contains all locusIds from the main dataframe
-                                        in the final output order. 
-                                        Length = nGenesUsed
-        genes_df (pandas DataFrame): The dataframe created out of genes.GC,
-                                must contain cols 'locusId', 'begin', 'end', 'scaffoldId'
-                                        Length = nTotalGenes
-    Returns:
-        Strain_to_closest_gene_series (pandas Series): For each strain, the index (location)
-                            within 'locusIds_used' which it is closest to. 
-                            Length = nAllStrains
 
-
-    Description:
-        We find the closest gene (labelled by index of locusIds_used) to each
-        strain. In order to do this efficiently, we need to sort the values
-        in strains and genes_df so we can go one by one and check if the gene
-        is close. But if we want to sort, we want to store the original indexes
-        since those are what we will be needing (if we reshuffle the dataframes
-        and find the closest genes to each strain then it would also take time
-        to find the original index). 
-        So we create a new column for both genes and strains called 
-        'previous_index' in order to store what the indexes originally were.
-        Then we group the genes and strains by scaffoldId, and iterate over
-        the subsets of the genes and strains that are inside that scaffoldId.
-        Every time we get a new scaffoldId, we select the subset of strains
-        and genes that are in that scaffoldId, and we sort them in increasing
-        position. Then we start by assuming the first strain in the subset
-        is the closest to the first gene in it's subset, and check if it's
-        closer to that gene than to the next one. As long as it's closer
-        to the next gene than to the current gene, we don't finish labelling
-        which gene it's closest to. Once it is closer to the current gene
-        than to the next one, we mark both their 'previous_index' values
-        in a list and move on to the next strain (keeping the current gene
-        index). We do this for all scaffolds, thus finding the closest strain
-        to each gene within it's scaffold, and return a pandas Series which
-        has the same length as the strains DataFrame (nAllStrains), and the 
-        value in each is the index of locusIds_used which it is closest to.
-
-    """
-    included_genes = [bool(x in locusIds_used.values) for x in genes_df['locusId'].values]
-    sub_genes_df = genes_df[["locusId","scaffoldId","begin","end"]][included_genes]
-    previous_index_list = []
-    
-    index_list = list(locusIds_used.index)
-    values_list = list(locusIds_used.values)
-    for val in sub_genes_df['locusId'].values:
-        previous_index_list.append(index_list[values_list.index(val)])
-    sub_genes_df['previous_index'] = previous_index_list
-    sub_genes_df['midpoint'] = (sub_genes_df['begin'] + sub_genes_df['end'])/2
-    strains["previous_index"] = strains.index
-
-    # Reorganizing columns for the following algorithm
-    strains = strains[["pos","previous_index","scaffold"]]
-
-    # Now we group per scaffold and get the values
-    strain_scf2ix = strains.groupby(by="scaffold").indices
-    gene_scf2ix = sub_genes_df.groupby(by="scaffoldId").indices
-    closest_gene_list = []
-    for scaffoldId in strain_scf2ix.keys():
-        print(f"Beginning to find closest used genes to strains for scaffold {scaffoldId}")
-        # First we get the subsets of our dataframe that have this scaffold:
-        strains_subset = strains.iloc[strain_scf2ix[scaffoldId]]
-        genes_subset = sub_genes_df.iloc[gene_scf2ix[scaffoldId]]
-        # then we sort them  by the values we care about to allow algorithm
-        sorted_strains_subset = strains_subset.sort_values(["pos"], ascending=[True])
-        sorted_genes_subset = genes_subset.sort_values(["midpoint"], ascending=[True])
-        # For this algorithm, we start by assuming the closest gene is the first
-        crnt_closest_gene_ix = 0
-        midpoints = sorted_genes_subset['midpoint']
-        final_gene_ix = len(midpoints) - 1
-        for strain_row_tuple in sorted_strains_subset.itertuples():
-            if crnt_closest_gene_ix == final_gene_ix:
-                closest_gene_list.append([
-                            strains_subset['previous_index'].iat[strain_row_tuple[0]],
-                            genes_subset['previous_index'].iat[final_gene_ix]
-                            ])        
-            else:
-                # strain_row_tuple[1] is the position of the current strain
-                distance_to_current_gene = abs(strain_row_tuple[1] - midpoints.iat[crnt_closest_gene_ix])
-                distance_to_next_gene = abs(strain_row_tuple[1] - midpoints.iat[crnt_closest_gene_ix + 1])
-                while distance_to_next_gene < distance_to_current_gene:
-                    crnt_closest_gene_ix += 1
-                    if crnt_closest_gene_ix == final_gene_ix:
-                        break
-                    distance_to_current_gene = abs(strain_row_tuple[1] - midpoints.iat[crnt_closest_gene_ix])
-                    distance_to_next_gene = abs(strain_row_tuple[1] - midpoints.iat[crnt_closest_gene_ix + 1])
-
-                closest_gene_list.append([
-                            strains_subset['previous_index'].iat[strain_row_tuple[0]],
-                            genes_subset['previous_index'].iat[crnt_closest_gene_ix]
-                            ])
-
-    
-    print(f"Finished finding closest genes for all scaffolds")
-    strain_index = [x[0] for x in closest_gene_list]
-    gene_index = [x[1] for x in closest_gene_list]
-    Strain_to_closest_gene_series = pd.Series(gene_index, index=strain_index)
-    Strain_to_closest_gene_series.sort_index(inplace=True)
-    return Strain_to_closest_gene_series
-        
-
-
-
-def create_strain_lrn(strain_lr, gdiff, strains, strainToGene, dbg_print=False):
-    """ We normalize per strain values?
-    Args:
-        strain_lr:  
-            (comes from strain_lr) (float): dataframe with one column per setindexname
-                Num rows is nAllStrains len(all_df)
-        gdiff:  dataframe (float) with one column per setindexname (same length as main_df-
-                                which is equivalent to the number of unique locusIds that are used)
-                                (lrn - lr)
-                                len: nGenesUsed
-        strains: all_df dataframe but just the metadata columns. Needs column 'scaffold'
-                    Num rows (length) nAllStrains
-        strainToGene pandasSeries<index>: For each strain, the index of the closest
-                                            gene center. Length: nAllStrains 
-    Returns:
-        pandas DataFrame with normalized strain values per experiment
-        (Num columns = nExperiments that are used), nRows = nAllStrains.
-
-    Description:
-        First, for each experiment, we take the per gene difference between 
-        the normalized log ratio and the plain old log ratio, and then we map those values
-        onto all the strains using the Strain To Closest Gene series we computed
-        earlier. So for each strain, we take the closest Gene and map that value (the difference
-        between the normalized log fitness and the regular log fitness) to a list
-        we call "per_strain_exp_diff". Then we group the strains by scaffold and
-        take the medians of per_strain_exp_diff by these scaffolds, and for each
-        strain, instead of having it's own gene difference value, it instead now
-        has the median of all the strain difference values in the same scaffold
-        as it. Next we multiply that entire series by negative 1 and call it
-        neg_str_scf_med, for 'negative strain per scaffold median'.
-        Now we initialize the numbers we'll add to the original log ratios
-        in order to get the normalized strain values. For each value in
-        per_strain_exp_diff, if it's 'NA', then we insert the negative
-        median of the differences from neg_str_scf_med, otherwise, we leave the
-        value as it is (the per_strain_exp_diff value); we call the new series 'sdiff'.
-        To get the final normalized log ratios for the strains under this 
-        experiment, we simply add the original log ratios to the values
-        in sdiff, and that's our column for this experiment.
-        The entire normalized log ratio per strain dataframe is one column
-        per experiment name.
-        
-    """
-
-    # We check that the column names (experiment names) match between the two dataframes    
-    for i in range(len(strain_lr.columns)):
-        if strain_lr.columns[i] != gdiff.columns[i]:
-            raise Exception("Column names are not matching each other."
-                            f" {strain_lr.columns[i]} != {gdiff.columns[i]}")
-
-    results = {}
-    for exp_name in strain_lr.columns:
-        print("currently working on normalizing strain fitness values for"
-              f" experiment {exp_name}")
-        # experiment log ratio column (pandas Series)
-        exp_lr = strain_lr[exp_name]
-        # experiment diff between normalized and not (pandas Series)
-        exp_diff = gdiff[exp_name]
-        # The length of this series will be nAllStrains, with multiple repeats 
-        per_strain_exp_diff = exp_diff.iloc[strainToGene]
-        per_strain_exp_diff.reset_index(inplace=True, drop=True)
-        # We get the medians of the strain log ratios grouped by scaffoldId 
-        strain_scaffold_ix2_medians = []
-        scaffold_indices = strains.groupby(by="scaffold").indices
-        for index_group in scaffold_indices.values():
-            crnt_median = exp_lr.iloc[index_group].median()
-            for ix in index_group:
-                strain_scaffold_ix2_medians.append([ix,crnt_median])
-        medians = [x[1] for x in strain_scaffold_ix2_medians]
-        indices = [x[0] for x in strain_scaffold_ix2_medians]
-        strain_scaffold_medians = pd.Series(medians, index=indices)
-        neg_str_scf_med = -1 * strain_scaffold_medians
-        
-        sdiff = []
-        for ix, val in per_strain_exp_diff.iteritems():
-            if pd.isnull(val):
-                sdiff.append(neg_str_scf_med.iat[ix])
-            else:
-                sdiff.append(per_strain_exp_diff.iat[ix])
-        sdiff = pd.Series(sdiff) 
-        results[exp_name] = exp_lr + sdiff
-
-    return pd.DataFrame.from_dict(results)
-                
-                
-
-
-
-
-        
-
-
-
-
-    '''
-    results = {}
-    tot_num_cols = len(strain_lr.columns)
-    # We iterate over every column in both dataframes strain_lr & gdiff
-    for i in range(tot_num_cols):
-        strain_lr_set_index_name = list(strain_lr.columns)[i]
-        print(f"Currently working on column {strain_lr_set_index_name}, {i + 1}/{tot_num_cols}")
-        gdiff_set_index_name = list(gdiff.columns)[i]
-        if strain_lr_set_index_name != gdiff_set_index_name:
-            raise Exception("Columns are not matching each other."
-                            f" {strain_lr_set_index_name} != {gdiff_set_index_name}")
-        strain_lr_col = strain_lr[strain_lr_set_index_name]
-        gdiff_col = gdiff[gdiff_set_index_name]
-        
-        # What happens here ??
-        # Here we want to copy each value from the gdiff_col,
-        # and create a Series the length of all_df
-        sdiffGene = [gdiff_col.iat[strainToGene.iat[j]] for j in range(len(strainToGene.values))]
-        # Does this require all values in strains['scaffolds'] to be in strain_lr_col?
-        grouped_strain_lr = dict(strain_lr_col.groupby(by=strains['scaffold']).indices)
-
-        # We want the median to be the same for every value under a group
-        # of indices
-        sdiffSc_d = {}
-        for group_label, indices in grouped_strain_lr.items():
-            current_median = strain_lr_col.iloc[indices].median()
-            if dbg_print:
-                for ix in indices:
-                    if ix in sdiffSc_d:
-                        raise Exception("Reoccuring index value (?)")
-                    sdiffSc_d[ix] = -1*current_median
-            else:
-                for ix in indices:
-                    sdiffSc_d[ix] = -1*current_median
-
-        sdiffSc = [sdiffSc_d[j] for j in sorted(sdiffSc_d.keys())]
-        sdiffSc = pd.Series(sdiffSc, index = sorted(sdiffSc_d.keys()))
-
-        print(len(sdiffGene))
-        print(len(sdiffSc))
-        sdiff = [sdiffSc[j] if pd.isnull(sdiffGene[j]) else sdiffGene[j] \
-                 for j in sdiffSc.index]
-        # You can add a series and a list vectorwise, but will make sdiff a series anyways:
-        results[strain_lr_set_index_name] = strain_lr_col + pd.Series(sdiff)
-
-    return pd.DataFrame.from_dict(results)
-    '''
-
-
-def AdjacentPairs(genes_df, dbg_prnt=False):
-    """
-    Args:
-        genes_df pandas DataFrame of genes.GC tsv
-    Returns:
-        DataFrame with the following cols:
-            Gene1, Gene2, sysName1, type1, scaffoldId, begin1, end1, strand1, name1, desc1, GC1, 
-            nTA1, sysName2, type2, begin2, end2, strand2, name2, desc2, GC2, nTA2
-        Length of dataframe is at first the length of genes.GC - 1, because we get all pairs
-        of consecutive genes, but then we also remove all consecutive genes that aren't 
-        on the same scaffold.
-
-    Description:
-        Similar to CrudeOp, we get the consecutive pairs of genes from genes_df and create
-        rows (length of genes_df - 1) with all of them, only removing rows that contain a 
-        pair of genes that aren't on the same scaffold.
-    """
-    # get genes in order of scaffoldId and then tiebreaking with increasing begin
-    c_genes_df = genes_df.copy(deep=True).sort_values(by=['scaffoldId', 'begin'])
-
-    # We offset the genes with a loop starting at the first
-    g1_g2_df = pd.DataFrame.from_dict({
-            "Gene1": list(c_genes_df['locusId']),
-            "Gene2": list(c_genes_df['locusId'].iloc[1:]) + [c_genes_df['locusId'].iloc[0]]
-        })
-
-    # add metadata and only keep pairs with same scaffold
-    mg1 = g1_g2_df.merge(c_genes_df, left_on="Gene1", right_on="locusId")
-    del mg1['locusId']
-    adj = mg1.merge(c_genes_df,
-                    left_on="Gene2",
-                    right_on="locusId",
-                    suffixes = ["1","2"]
-                    )
-    adj = adj[adj['scaffoldId1'] == adj['scaffoldId2']]
-    del(adj['locusId'])
-    
-    if dbg_prnt:
-        adj.to_csv("tmp/py_AdjacentPairsOutput.tsv", sep="\t")
-
-    return adj
-
-
-
-def OLDStrainClosestGenes(strains, locusIds_used, genes_df, dbg_prnt=False):
+def StrainClosestGenes(strains, genes, dbg_prnt=False):
     """ 
     Args:
         strains (pandas DataFrame):
@@ -1258,8 +875,7 @@ def OLDStrainClosestGenes(strains, locusIds_used, genes_df, dbg_prnt=False):
                         the closest gene from 'genes', by taking halfway between each gene's beginning
                         and ending position and comparing it to the position of the strain barcode insertion.
     Description:
-        For each strain (barcode in all.poolcount), find the closest gene as listed, in gene_fit_d['g']
-        as an index label from 
+        For each strain (barcode in all.poolcount), find the closest gene, as an index label from 
         'genes' dataframe.
         returns a list, same length as strain, with corresponding strain rows -> closest row within genes
         If there is no gene on that scaffold, returns NA.
@@ -1349,3 +965,189 @@ def OLDStrainClosestGenes(strains, locusIds_used, genes_df, dbg_prnt=False):
         recombined_series.to_csv("tmp/py_recombined_series.tsv", sep="\t")
 
     return recombined_series
+
+
+    '''
+    # strainSplit and geneSplit is a dict mapping unique_value -> index labels
+    strainSplit = strains.groupby(by=['scaffold']).groups
+    geneSplit = genes.groupby(by=genes['scaffoldId']).groups
+
+    indexSplit = {}
+    # We iterate over the unique scaffold Ids in the dict strains
+    for scaffoldId in strainSplit.keys():
+        s = strains.loc[strainSplit[scaffoldId]]
+
+        if scaffoldId not in geneSplit:
+            # We make an empty dataframe
+            g = pd.DataFrame()
+        else:
+            # We get the dataframe from genes
+            g = genes.loc[geneSplit[scaffoldId]]
+
+        if g.shape[0] == 0:
+            indexSplit[scaffoldId] = [np.nan]*len(s)
+        elif g.shape[0] == 1:
+            # There is a single index, and we use that.
+            indexSplit[scaffoldId] = [list(geneSplit[scaffoldId])[0]] * len(s)
+        else:
+            # We get the centers of all the genes
+            g['pos'] = (g['begin'] + g['end']) / 2
+
+            # Now we find the location of the strain and capture the closest gene center
+            # This is the part that could be multithreaded/ sorted
+            crnt_scaffold_list = []
+            if dbg_prnt:
+                print(f"Now finding closest gene for {s.shape[0]} values")
+            count = 0
+
+            print(f"Starting to find strain closest genes for scaffold: {scaffoldId}")
+            total_rows = s.shape[0]
+            time_stamp = time.time()
+            for ix, row in s.iterrows():
+                if ix % 5000 == 0 and count != 0:
+                        rows_remaining = total_rows - ix
+                        amount_5000_left = rows_remaining/5000
+                        print(f"Currently at count {ix} in Strain Closest Genes for"
+                              f" scaffoldId {scaffoldId}.\n"
+                              f"Number of rows remaining: {rows_remaining}.\n"
+                              f"Time Remaining: {(time.time() - time_stamp)*amount_5000_left}"
+                                " seconds.\n")
+                        time_stamp = time.time()
+
+                gene_pos_minus_strain_pos = (g['pos'] - row['pos']).abs()
+                # we get the index of the minimum value
+                crnt_scaffold_list.append(gene_pos_minus_strain_pos.idxmin())
+            print("Done finding closest genes to strains.")
+            
+            if dbg_prnt:
+                with open("tmp/py_crnt_scaffold_list.json", "w") as g:
+                    g.write(json.dumps([int(x) for x in crnt_scaffold_list], indent=2))
+
+            indexSplit[scaffoldId] = crnt_scaffold_list
+
+
+    
+    recombined_series = py_unsplit(indexSplit, strains['scaffold']) 
+    if dbg_prnt:
+        recombined_series.to_csv("tmp/py_recombined_series.tsv", sep="\t")
+
+    return recombined_series
+    '''
+
+
+def create_strain_lrn(strain_lr, gdiff, strains, strainToGene, dbg_print=False):
+    """ We normalize per strain values?
+    Args:
+        strain_lr:  
+            (comes from strain_lr) (float): dataframe with one column per setindexname
+                Num rows is nUsefulReads, which is less than nAllStrains len(all_df)
+        gdiff:  dataframe (float) with one column per setindexname (same length as main_df-
+                                which is equivalent to the number of unique locusIds that are used)
+                                (lrn - lr)
+        strainToGene pandasSeries<index>: For each strain, the index of the closest
+                                            gene center. Length of all_df
+        strains: all_df dataframe but just the metadata columns. Needs column 'scaffold'
+    Returns:
+        pandas DataFrame
+    """
+
+    if dbg_print:
+        print("Creating strain_lrn (strain log ratios normalized).")
+        print("strain_lr")
+        print(strain_lr)
+        print("gdiff")
+        print(gdiff)
+        print("strains")
+        print(strains)
+        print("strainToGene")
+        print(strainToGene)
+ 
+
+    results = {}
+    tot_num_cols = len(strain_lr.columns)
+    # We iterate over every column in both dataframes strain_lr & gdiff
+    for i in range(tot_num_cols):
+        strain_lr_set_index_name = list(strain_lr.columns)[i]
+        print(f"Currently working on column {strain_lr_set_index_name}, {i + 1}/{tot_num_cols}")
+        gdiff_set_index_name = list(gdiff.columns)[i]
+        if strain_lr_set_index_name != gdiff_set_index_name:
+            raise Exception("Columns are not matching each other."
+                            f" {strain_lr_set_index_name} != {gdiff_set_index_name}")
+        strain_lr_col = strain_lr[strain_lr_set_index_name]
+        gdiff_col = gdiff[gdiff_set_index_name]
+        
+        # What happens here ??
+        # Here we want to copy each value from the gdiff_col,
+        # and create a Series the length of all_df
+        sdiffGene = [gdiff_col.iat[strainToGene.iat[j]] for j in range(len(strainToGene.values))]
+        # Does this require all values in strains['scaffolds'] to be in strain_lr_col?
+        grouped_strain_lr = dict(strain_lr_col.groupby(by=strains['scaffold']).indices)
+
+        # We want the median to be the same for every value under a group
+        # of indices
+        sdiffSc_d = {}
+        for group_label, indices in grouped_strain_lr.items():
+            current_median = strain_lr_col.iloc[indices].median()
+            if dbg_print:
+                for ix in indices:
+                    if ix in sdiffSc_d:
+                        raise Exception("Reoccuring index value (?)")
+                    sdiffSc_d[ix] = -1*current_median
+            else:
+                for ix in indices:
+                    sdiffSc_d[ix] = -1*current_median
+
+        sdiffSc = [sdiffSc_d[j] for j in sorted(sdiffSc_d.keys())]
+        sdiffSc = pd.Series(sdiffSc, index = sorted(sdiffSc_d.keys()))
+
+        print(len(sdiffGene))
+        print(len(sdiffSc))
+        sdiff = [sdiffSc[j] if pd.isnull(sdiffGene[j]) else sdiffGene[j] \
+                 for j in sdiffSc.index]
+        # You can add a series and a list vectorwise, but will make sdiff a series anyways:
+        results[strain_lr_set_index_name] = strain_lr_col + pd.Series(sdiff)
+
+    return pd.DataFrame.from_dict(results)
+
+
+def AdjacentPairs(genes_df, dbg_prnt=False):
+    """
+    Args:
+        genes_df pandas DataFrame of genes.GC tsv
+    Returns:
+        DataFrame with the following cols:
+            Gene1, Gene2, sysName1, type1, scaffoldId, begin1, end1, strand1, name1, desc1, GC1, 
+            nTA1, sysName2, type2, begin2, end2, strand2, name2, desc2, GC2, nTA2
+        Length of dataframe is at first the length of genes.GC - 1, because we get all pairs
+        of consecutive genes, but then we also remove all consecutive genes that aren't 
+        on the same scaffold.
+
+    Description:
+        Similar to CrudeOp, we get the consecutive pairs of genes from genes_df and create
+        rows (length of genes_df - 1) with all of them, only removing rows that contain a 
+        pair of genes that aren't on the same scaffold.
+    """
+    # get genes in order of scaffoldId and then tiebreaking with increasing begin
+    c_genes_df = genes_df.copy(deep=True).sort_values(by=['scaffoldId', 'begin'])
+
+    # We offset the genes with a loop starting at the first
+    g1_g2_df = pd.DataFrame.from_dict({
+            "Gene1": list(c_genes_df['locusId']),
+            "Gene2": list(c_genes_df['locusId'].iloc[1:]) + [c_genes_df['locusId'].iloc[0]]
+        })
+
+    # add metadata and only keep pairs with same scaffold
+    mg1 = g1_g2_df.merge(c_genes_df, left_on="Gene1", right_on="locusId")
+    del mg1['locusId']
+    adj = mg1.merge(c_genes_df,
+                    left_on="Gene2",
+                    right_on="locusId",
+                    suffixes = ["1","2"]
+                    )
+    adj = adj[adj['scaffoldId1'] == adj['scaffoldId2']]
+    del(adj['locusId'])
+    
+    if dbg_prnt:
+        adj.to_csv("tmp/py_AdjacentPairsOutput.tsv", sep="\t")
+
+    return adj
