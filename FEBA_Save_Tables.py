@@ -106,6 +106,7 @@ Input to FEBA_Save_Tables 'gene_fit_d' is big:
                 rank (int)
             [specphe]: (Not done)
 """
+
 def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
                      op_dir, exps_df, writeImage=False, debug=False):
     """
@@ -123,7 +124,12 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
                             be easily imported into python/R?
 
     Note: 
-        We want to merge many dataframes on the locusId columns
+        We merge many dataframes on the locusId columns
+
+
+
+    Outputs the following dataframes:
+
     """
 
     if not os.path.isdir(op_dir):
@@ -139,18 +145,20 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
         if name not in gene_fit_d['lrn'].columns:
             raise Exception(f"Name {name} missing from 'lrn' object.")
 
+    for val in ["locusId", "sysName", "desc"]:
+        if val not in genes_df.columns:
+            raise Exception(f"Column name {val} not in genes_df")
 
+    # Preparing variables that make it simpler to create_tables
     first3_cols = ["locusId", "sysName", "desc"]
     genes_first3 = genes_df[first3_cols]
-    print(genes_first3.head())
     final_colnames = list(gene_fit_d['q']['name'] + ' ' + gene_fit_d['q']['short'])
-
 
     # WRITING TABLES:
     write_DataFrame_and_log(os.path.join(op_dir, "fit_quality.tsv"), gene_fit_d['q'], df_name="quality")
 
 
-    #2 Fit genes - should be good
+    #2 Fit genes - All genes, with some having the used column = True
     # used is a boolean list
     used = [(genes_df['locusId'].iat[i] in gene_fit_d['genesUsed']) \
             for i in range(len(genes_df['locusId']))]
@@ -164,15 +172,6 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
     pre_merge['locusId'] = gene_fit_d['g']
     # below how is 'inner' by default, which is the fitting merge type
     tmp_df = genes_first3.merge(pre_merge, on="locusId") 
-    """
-    combine_dataframes_on_column(genes_first3, 
-                                pre_merge, 
-                                'locusId', 
-                                optional_str="log ratios unnormalized",
-                                debug=False)
-    #tmp_df = genes_df[first3_cols].append(pre_merge)
-    tmp_df.reindex(columns = first3_cols + final_colnames)
-    """
     write_DataFrame_and_log(os.path.join(op_dir, "fit_logratios_unnormalized.tab"), 
                             tmp_df, df_name = "log ratios unnormalized")
 
@@ -185,7 +184,7 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
                             tmp_df, df_name = "log ratios unnormalized naive")
 
 
-    #5 Fit Logratios (Can put into 'extract...' function)
+    #5 Fit Logratios 
     pre_merge = gene_fit_d['lrn'].copy(deep=True)
     pre_merge['locusId'] = gene_fit_d['g']
     tmp_df = genes_first3.merge(pre_merge, on="locusId") 
@@ -193,7 +192,7 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
                             tmp_df, df_name = "fit logratios")
 
     #6 Fit Log Ratios 1st half (Can put into 'extract...' function)
-    pre_merge = gene_fit_d['lrn'].copy(deep=True)
+    pre_merge = gene_fit_d['lrn1'].copy(deep=True)
     pre_merge['locusId'] = gene_fit_d['g']
     tmp_df = genes_first3.merge(pre_merge, on="locusId") 
     write_DataFrame_and_log(os.path.join(op_dir, "fit_logratios_half1.tab"), 
@@ -209,50 +208,38 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
 
 
 
-
+    print(genes_df)
     #8 Fit Log Ratios Good (?)
-    tmp_df = genes_df[first3_cols]
-    genes_in_g_bool = [bool(genes_df['locusId'].iat[i] in gene_fit_d['g']) for i \
-                        in range(len(genes_df['locusId']))]
-    tmp_df = tmp_df[genes_in_g_bool]
-    tmp_df['comb'] = pd.Series([tmp_df['sysName'].iat[i] + ' ' + \
-                                tmp_df['desc'].iat[i] for i in range(len(tmp_df['sysName']))])
+    genes_in_g_bool = [bool(genes_df['locusId'].iat[i] in gene_fit_d['g'].values) for i \
+                        in range(genes_df.shape[0])]
+    f3col_genes_df = genes_df[first3_cols][genes_in_g_bool]
+    f3col_genes_df['comb'] = f3col_genes_df['sysName'] + ' ' + f3col_genes_df['desc']
+    tmp_df = f3col_genes_df.copy(deep=True)
     # q is quality, u is used
     if list(gene_fit_d['q']['u']).count(True) == 0:
         logging.warning("***Warning: 0 'OK' experiments.")
         tmp_df = tmp_df.sort_values(by='locusId')
     else:
-        u_l = list(gene_fit_d['q']['u'])
-        cols_to_keep = [i for i in range(len(u_l)) if u_l[i]]
-        if isinstance(gene_fit_d['g'], pd.DataFrame):
-            pre_merge_df =gene_fit_d['g'].copy(deep=True)
-        elif isinstance(gene_fit_d['g'], pd.Series):
-            pre_merge_df = pd.DataFrame.from_dict({
-                "locusId": gene_fit_d['g']
-                })
-        else:
-            raise Exception("Could not recognize type of gene_fit_d['g']:"
-                            f" {type(gene_fit_d['g'])}")
-        pre_merge_df.append(gene_fit_d['lrn'].iloc[:,u_l])
-        tmp_df = tmp_df.append(pre_merge_df)
+        used_q_rows = gene_fit_d['q'][gene_fit_d['q']['u']] 
+        used_names = used_q_rows['name'] 
+        lrn_copy = gene_fit_d['lrn'].copy(deep=True)
+        lrn_copy = lrn_copy[used_names]
+        lrn_copy['locusId'] = gene_fit_d['g']
+        tmp_new = tmp_df.merge(lrn_copy, on="locusId")
+        rename_columns = list(used_q_rows['name'] + ' ' + used_q_rows['short'])
+        rename_d = {val: rename_columns[ix] for ix, val in enumerate(list(tmp_new.columns[4:]))}
+        tmp_new = tmp_new.rename(columns=rename_d)
 
     write_DataFrame_and_log(os.path.join(op_dir, "fit_logratios_good.tab"), 
-                            tmp_df, df_name = "fit logratios good")
-    
+                            tmp_new, df_name = "fit logratios good")
+    del tmp_new, lrn_copy
 
     
     #9 Gene Counts (?)
-    tmp_df = genes_df[first3_cols]
-    genes_in_g_bool = [bool(genes_df['locusId'].iat[i] in gene_fit_d['g']) for i \
-                        in range(len(genes_df['locusId']))]
-    tmp_df = tmp_df[genes_in_g_bool]
-    tmp_df['comb'] = pd.Series([tmp_df['sysName'].iat[i] + ' ' + \
-                                tmp_df['desc'].iat[i] for i in range(len(tmp_df['sysName']))])
-
     pre_merge = gene_fit_d['tot'].copy(deep=True) 
     pre_merge['locusId'] = gene_fit_d['g']
 
-    tmp_df = genes_first3.merge(pre_merge, on="locusId") 
+    tmp_df = f3col_genes_df.merge(pre_merge, on="locusId") 
     write_DataFrame_and_log(os.path.join(op_dir, "gene_counts.tab"), 
                             tmp_df, df_name = "gene counts")
     
@@ -284,7 +271,6 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
 
     #13 Strain Fit
     logging.info("Getting order of scaffolds to print Strain Fit.")
-
     tmp_df = gene_fit_d['strains'].join(gene_fit_d['strain_lrn'])
     tmp_df.sort_values(by=['scaffold','pos'])
     write_DataFrame_and_log(os.path.join(op_dir,"strain_fit.tab"), 
@@ -300,10 +286,18 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
     if 'cofit' in gene_fit_d and gene_fit_d['cofit'] is not None:
         # Why do we repeat the three columns sysName, locusId and desc
         # with hitSysName, hitId, and hitDesc etc?
-        tmp_df = genes_df[first3_cols].merge(gene_fit_d['cofit'], on="locusId")
-        tmp_df["hitSysName"] = genes_df["sysName"]
-        tmp_df["hitId"] = genes_df["locusId"]
-        tmp_df["hitDesc"] = genes_df["desc"]
+        tmp_df = f3col_genes_df.merge(gene_fit_d['cofit'], on="locusId")
+        pre_merge_df = pd.DataFrame.from_dict({
+            "hitSysName" : genes_df["sysName"],
+            "hitId" : genes_df["locusId"],
+            "hitDesc" : genes_df["desc"]
+        })
+        tmp_df = tmp_df.merge(pre_merge_df)
+        print(tmp_df)
+        stop(297)
+        #tmp_df["hitSysName"] = genes_df["sysName"]
+        #tmp_df["hitId"] = genes_df["locusId"]
+        #tmp_df["hitDesc"] = genes_df["desc"]
         tmp_df.sort_values(by=["locusId", "rank"], inplace=True, axis=0)
     else:
         logging.warning("Cofit not found in gene_fit_d")
@@ -384,7 +378,8 @@ def extract_gene_fit_d_category_to_tsv_basic(input_df,
                                              df_log_name):
     """
     Args:
-        inp_df: A standard DataFrame coming out of gene_fit_d
+        inp_df: A standard DataFrame coming out of gene_fit_d, length is
+                nGenesUsed
         genes_locusId: pandas Series with locusId (str)
         genes_first3 DataFrame: Columns of genes.GC ["locusId", "sysName", "desc"]
         final_colnames: list(gene_fit_d['q']['name'] + ' ' + gene_fit_d['q']['short'])
@@ -392,7 +387,6 @@ def extract_gene_fit_d_category_to_tsv_basic(input_df,
         df_log_name: What name of output to report
 
     Subroutines: 
-        combine_dataframes_on_column
     """
 
     pre_merge = input_df.copy(deep=True)

@@ -492,11 +492,12 @@ def createt0gN(t0tot, central_insert_bool_list, indexBy, debug_print_bool=False)
     Returns:
         t0gN:
             A dataframe with the same number of columns
-            as t0tot + 1 for locusIds. Row number depends on the 
+            as t0tot + 1 (+1 for column 'locusIds'). Row number depends on the 
             number of unique locusIds in indexBy as well as 
             the genes with central insertions.
             It's length should be the same length as the number of 
-            unique locusIds
+            unique locusIds (num = nGenesUsed??, might be more because
+            we aren't filtering for gene numbers that pass minT0GenesUsed)
     Description:
         We get a dataframe which sums the time0 dates
         over the places where the locusId is the same
@@ -633,7 +634,7 @@ def getGenesUsedList(t0tot, strainsUsed, all_df, minT0Gene, genesUsed_list,
                                  )
         if debug_print_bool:
             t0_gN_used.to_csv("tmp/py_t0_gN_used.tsv", index=False, sep="\t")
-        # n0 is a pandas series with a mean for each rows in t0_gN_used
+        # n0 is a pandas series with a mean for each row in t0_gN_used
         n0 = t0_gN_used.iloc[:,t0_gN_used.columns != 'locusId'].mean(axis=1)
         # Below we take the mean over the whole n0
         logging.info(f"Time0 reads per gene: mean {statistics.mean(n0)}"

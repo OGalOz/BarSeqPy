@@ -296,11 +296,12 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
     Args:
         GeneFitResults: (dict) setnameIndex -> ret_d
            ret_d:
-               gene_fit: DataFrame, contains cols:
+               gene_fit: DataFrame, length is nGenesUsed. contains cols:
                     fit (float): (unnormalized
                     fitNaive (float):
                     fit1 (float):
                     fit2 (float):
+                    fitnorm (float):
                     fitnorm1 (float)
                     fitnorm2 (float)
                     fitRaw (float)
@@ -319,11 +320,13 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
                     tot0_2 (int or nan)
                     tot (int or nan)
                     tot0 (int or nan)
-               strain_fit: pandas Series (float) 
-               strain_se: pandas Series (float) 
+               strain_fit: pandas Series (float)  Length is nAllStrains
+               strain_se: pandas Series (float)  Length is also nAllStrains
     Returns:
         gene_fit_d: (python dict)
             g (pandas Series (str)): pandas Series of locusIds
+            For below dataframes, num rows is nGenesUsed
+
             lr (float): dataframe with one column per setindexname
             lrNaive (float): dataframe with one column per setindexname
             lr1 (float): dataframe with one column per setindexname
@@ -347,7 +350,6 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
             tot0 (int or nan) dataframe with one column per setindexname
             version (str)
 
-    SubRoutines:
         
         
     """
@@ -374,6 +376,8 @@ def initialize_gene_fit_d(GeneFitResults, debug=False):
         gene_fit_d[col_name] = pd.DataFrame.from_dict(all_col_values_d)
     print(f"Time to create gene_fit_d: {time.time() - st}")
 
+    # We replace fitnorm(1,2) with lrn(1,2)
+    # And we replace fit(1,2) with lr(1,2)
     new_gene_fit_d = {}
     for k in gene_fit_d.keys():
         new_key = k.replace("fitnorm","lrn")
@@ -809,7 +813,7 @@ def CrudeOp(genes_df, dbg_out_file=None, dbg=False):
 
 
 
-def paircor(pairs, locusIds, values, use="p", method="pearson", names=["Gene1","Gene2"],
+def paircor(pairs, locusIds, values, use="p", method="spearman", names=["Gene1","Gene2"],
             dbg_prnt=False):
     """
     pairs (pandas DataFrame): dataframe with multiple cols (CrudeOp with TRUE cols from bOp)
@@ -817,7 +821,7 @@ def paircor(pairs, locusIds, values, use="p", method="pearson", names=["Gene1","
     locusIds (pandas Series (str)): locusIds 
     values (pandas Series): normalized fitness scores 
     use: 
-    method: Correlation method ("pearson", "spearman")
+    method: Correlation method ("spearman")
     names (list<str>): "Gene1", "Gene2"
     dbg_prnt (bool)
 
@@ -838,7 +842,7 @@ def paircor(pairs, locusIds, values, use="p", method="pearson", names=["Gene1","
         are their associated normalized log ratio values under the current
         experiment which we don't get in this function.
         Then we get the correlation between "value1" and "value2", i.e.
-        the correlation between the normalized log ratios for the pairs
+        the monotonic correlation between the normalized log ratios for the pairs
         under this experiment. We return this value (float)
 
     """
@@ -873,7 +877,7 @@ def paircor(pairs, locusIds, values, use="p", method="pearson", names=["Gene1","
         print(mrg2)
 
 
-    # method can be spearman or pearson
+    # method should be pearson
     res = mrg2['value1'].corr(mrg2['value2'], method=method)
 
     return res 

@@ -1,9 +1,15 @@
     TODO:
-        Currently at #HERE on analysis2 : FEBA_Exp_Status
         
-        Finish Description of analysis2 (Quality metrics then Strain Fitness)
+        Finish writing table outputs from FEBA_Save_Tables 
+            (now on 'Gene Counts')
 
         Compare outputs from AvgStrainFitness between Python and R.
+
+        Write explanation of Pearson vs Spearman in different settings:
+            Pearson is linear correlation
+            Spearman checks monotonic correlations
+            Spearman done for Crude Operon and Adjacent pair correlations
+            Pearson done for all other correlations?
 
         Run . testPy.sh 4
 
@@ -228,11 +234,9 @@
             Now we adjust the strainFit by adding these PseudoCount square root
             and inverse to their respective original reads values, taking 
             the log2 of those and subtracting the T0 sum from the Exp sum,
-            and also subtracting a 'strainFitAdjust' number. But for this
-            strainFit, which is adjusted, we don't apply median normalization
-            for some reason (?).
-            Now we compute the Standard Deviation per strain, (How does this 
-            computation give the standard deviation?)
+            and also subtracting a 'strainFitAdjust' number. For this
+            strainFit, which is adjusted, we don't apply median normalization.
+            Now we compute the Standard Deviation per strain.
             Then we get weights per strain, based on the number of reads in the Time0
             and the experiments. The weights are used to measure strainFitness for
             a gene more accurately. The strains with less reads are weighted less,
@@ -256,7 +260,9 @@
             the genes: 'fit' and 'fitNaive'. 'fit' is the median normalization of 'fitRaw' from
             each gene, then 'fitNaive' is a naive computation of fitness based on tot and
             tot0 (median normalized log2 difference of the two).
-            We return this dataframe called 'fitness_df'.
+            We return this dataframe called 'fitness_df'. The total number of rows in
+            this dataframe is the number of used Genes, since it's one row per used
+            gene.
        NormalizeByScaffold (analysis1):
           We create the column 'fitnorm' for main_df from GeneFitness.
           How:

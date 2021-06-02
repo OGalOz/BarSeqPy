@@ -119,8 +119,8 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
                                 genesUsed_list, genesUsed_list12, strainsUsed_list, 
                                 central_insert_bool_list, 
                                 minGenesPerScaffold=10, meta_ix=7,
-                                debug=False, nDebug_cols=4,
-                                starting_debug_col=10)
+                                debug=False, nDebug_cols=20,
+                                starting_debug_col=34)
 
         breakpoint3("tmp/BP3", GeneFitResults)
 
@@ -775,11 +775,17 @@ def import_gene_fit_d_and_CrudeOp(data_dir, CrudeOp_bool=True):
     all_files = os.listdir(data_dir)
     gene_fit_d = {}
     for f in all_files:
+        print(f"Importing file {f}")
         if ".tsv" in f:
             gene_fit_d[''.join(f.split('.')[:-1])] = pd.read_table(
                                                         os.path.join(
                                                             data_dir, f), 
-                                                            dtype={'locusId':str}
+                                                            dtype={'locusId':str,
+                                                                   'Gene1': str,
+                                                                   'Gene2': str,
+                                                                   'sysName': str,
+                                                                   'desc': str,
+                                                                   'hitId': str}
                                                         )
         elif ".json" in f:
             gene_fit_d[''.join(f.split('.')[:-1])] = json.loads(open(
@@ -1183,6 +1189,13 @@ def export_gene_fit_d(gene_fit_d, op_dir, dbg_prnt=True):
             if dbg_prnt:
                 print(f"exporting pandas object {k} to {op_dir}/{k}.tsv")
             gene_fit_d[k].to_csv(os.path.join(op_dir, k + ".tsv"), sep="\t", index=None)
+        elif k == "pairs":
+            pairs_d = gene_fit_d[k]
+            for new_k in pairs_d:
+                if type(pairs_d[new_k]) == pd.Series or type(pairs_d[new_k]) == pd.DataFrame:
+                    if dbg_prnt:
+                        print(f"exporting pandas object {new_k} to {op_dir}/{new_k}.tsv")
+                    pairs_d[new_k].to_csv(os.path.join(op_dir, k + ".tsv"), sep="\t", index=None)
         else:
             if dbg_prnt:
                 print(f"exporting non-pandas object {k}, {type(gene_fit_d[k])} to {op_dir}/{k}.json")

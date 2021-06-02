@@ -128,7 +128,8 @@ def analysis_1(all_df, exps_df, genes_df,
     use1 = [bool(x < 0.5) for x in all_df_used['f']]
 
     GeneAndStrainFitResults = {}
-    print(f"Running through {num_ix_remaining}/{len(all_index_names)} indices")
+    print(f"Running through {num_ix_remaining}/{len(all_index_names)} possible experiments"
+          f" starting at experiment number {starting_debug_col} from all")
     for set_index_name in all_index_names[starting_debug_col: starting_debug_col + nSetIndexToRun]:
         print(f"Currently working on index {set_index_name}")
         
@@ -394,10 +395,10 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
 
     Returns:
         main_df (pandas DataFrame): Contains cols:
-
             locusId <str>: The locusId to which this row is associated.
             fit: fitRaw column normalized by Median 
             fitNaive (float): Median normalized log2 difference between tot0 and tot 
+            fitnorm (float): Scaffold normalized fit scores (median and mode)
             fitRaw (float): Sum of weighted adjusted fitness scores divided by total weight. 
             n (int): Total number of strains in this locusId
             nEff (float ): The sum of the strain weights in these indeces/ max weight
@@ -412,7 +413,6 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
             t: (float) t-statistic
             fit1 (float): For every locusId found in genesUsed12, we give the fit value of first_half_df
             fit2 (float): For every locusId found in genesUsed12, we give the fit value of second_half_df
-            fitnorm (float): Scaffold normalized fit scores (median and mode)
             fitnorm1 (float): fit1 + fitnorm - fit
             fitnorm2 (float): fit2 + fitnorm - fit
             tot1 (int or nan): For every locusId found in genesUsed12, we give the tot value of first_half_df
@@ -631,7 +631,7 @@ def AvgStrainFitness(exp_used_strains,
             tot0 (int): The sum of the Time0s over the locusId
         
         * The length of the columns should be equal to the number of unique values
-        in all_used_locId[strainsUsed_short]
+        in all_used_locId[strainsUsed_short] = nGenesUsed
 
     
     # If genesUsed (as a list of locusId) and strainsUsed_short (as boolean vector) are provided,
@@ -1178,8 +1178,6 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
     for scaffoldId, rows in perScaffoldRows.items():
         if cdebug:
             print(f"Working on scaffoldId {scaffoldId} within NormalizeByScaffold")
-            print("Rows associated with this scaffoldId: ")
-            print(rows)
         if len(rows) < minToUse:
             if cdebug:
                 print("Removing " + str(len(rows)) + " NormalizedFitValues for " + scaffoldId)
@@ -1217,7 +1215,6 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
                 if subtract_mode:
                     # We use density function to estimate mode 
                     dns = stats.gaussian_kde(NormalizedFitValues[rows].dropna())
-                    print(list(NormalizedFitValues[rows]))
                     cmax, cmin = NormalizedFitValues[rows].max(), NormalizedFitValues[rows].min()
                     estimate_x = [cmin + (((cmax - cmin)/512)*i) for i in range(512)]
                     estimate_y = dns.evaluate(estimate_x)
