@@ -132,6 +132,9 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
 
     """
 
+    # Setting print options for debugging:
+    pd.set_option('display.max_columns', None)
+
     if not os.path.isdir(op_dir):
         os.mkdir(op_dir)
 
@@ -235,7 +238,7 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
     del tmp_new, lrn_copy
 
     
-    #9 Gene Counts (?)
+    #9 Gene Counts 
     pre_merge = gene_fit_d['tot'].copy(deep=True) 
     pre_merge['locusId'] = gene_fit_d['g']
 
@@ -288,16 +291,11 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
         # with hitSysName, hitId, and hitDesc etc?
         tmp_df = f3col_genes_df.merge(gene_fit_d['cofit'], on="locusId")
         pre_merge_df = pd.DataFrame.from_dict({
-            "hitSysName" : genes_df["sysName"],
             "hitId" : genes_df["locusId"],
+            "hitSysName" : genes_df["sysName"],
             "hitDesc" : genes_df["desc"]
         })
         tmp_df = tmp_df.merge(pre_merge_df)
-        print(tmp_df)
-        stop(297)
-        #tmp_df["hitSysName"] = genes_df["sysName"]
-        #tmp_df["hitId"] = genes_df["locusId"]
-        #tmp_df["hitDesc"] = genes_df["desc"]
         tmp_df.sort_values(by=["locusId", "rank"], inplace=True, axis=0)
     else:
         logging.warning("Cofit not found in gene_fit_d")
@@ -305,9 +303,9 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
             "locusId": [""],
             "sysName": [""],
             "desc": [""],
+            "cofit": [""],
+            "rank":[""],
             "hitId": [""],
-            "cofit": [0],
-            "rank":[0],
             "hitSysName": [""],
             "hitDesc": [""]
             })
@@ -320,7 +318,11 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
 
     #16 specphe - specific phenotypes
     if "specphe" in gene_fit_d and gene_fit_d["specphe"] is not None:
-        tmp_df = genes_df[first3_cols].join(gene_fit_d['specphe'], on="locusId")
+        #print(f3col_genes_df)
+        #print(f3col_genes_df.dtypes)
+        #print(gene_fit_d['specphe'])
+        #print(gene_fit_d['specphe'].dtypes)
+        tmp_df = f3col_genes_df.merge(gene_fit_d['specphe'], on="locusId")
     else:
         tmp_df = pd.DataFrame.from_dict({
                 "locusId": [""],
@@ -335,12 +337,16 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
                 "Concentration_2": [""],
                 "Units_2": [""],
             })
+    print(tmp_df.head(6))
     write_DataFrame_and_log(os.path.join(op_dir, "specific_phenotypes.tab"), 
                             tmp_df, 
                             df_name="specific phenotypes")
 
 
-    # 17 Strong - we find which normalized log ratios are greater than 2 and 
+
+    # 17 Strong - 
+    # We create the dataframe 'strong.tab'
+    # we find which normalized log ratios are greater than 2 and 
     #             't' scores are greater than 5. We store results in one list
     #             'which_are_strong' which is list<[col_name (str), row_ix (int)]>
     create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, debug=debug)
@@ -355,11 +361,12 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
     #19 HTML Info
     html_info_d = {
             "organism_name": organism_name_str,
-            "number_of_experiments": len(gene_fit_d['q']['short']) - list(gene_fit_d['q']['short']).count("Time0"),
+            "number_of_experiments": len(gene_fit_d['q']['short']) - \
+                                     list(gene_fit_d['q']['short']).count("Time0"),
             "number_of_successes": list(gene_fit_d['q']['u']).count(True),
             "version": gene_fit_d['version'],
             "date": str(datetime.now())
-            }
+    }
 
     with open(os.path.join(op_dir, "html_info.json"), 'w') as g:
         g.write(json.dumps(html_info_d, indent=2))
@@ -402,18 +409,31 @@ def extract_gene_fit_d_category_to_tsv_basic(input_df,
 
 
 def create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, debug=False):
+    """
+    Description:
+        We create the dataframe 'strong.tab'
+    # we find which normalized log ratios are greater than 2 and 
+    #             't' scores are greater than 5. We store results in one list
+    #             'which_are_strong' which is list<[col_name (str), row_ix (int)]>
+    We end up with a dataframe with a single row for every strong fit and t score
+    value, and we add other informational columns like 'sysName', 'desc' (description)
+    and 'short'. After all we have a dataframe with the following columns:
+        locusId, name (experiment name), t (t score), lrn (fitness score
+        (log ratio normalized)), sysName, desc, and short.
+
+    
+    """
     which_are_strong = []
+    abs_lrn = gene_fit_d['lrn'].abs()
+    abs_t = gene_fit_d['t'].abs()
     for col in gene_fit_d['lrn'].columns:
         for row_ix in range(gene_fit_d['lrn'].shape[0]):
-            if abs(gene_fit_d['lrn'][col].iloc[row_ix]) > 2 and \
-                abs(gene_fit_d['t'][col].iloc[row_ix]) > 5:
+            if abs_lrn[col].iloc[row_ix] > 2 and \
+                abs_t[col].iloc[row_ix] > 5:
                 which_are_strong.append([col, row_ix])
     strong_t = [gene_fit_d['t'][x[0]].iloc[x[1]] for x in which_are_strong]
     strong_lrn = [gene_fit_d['lrn'][x[0]].iloc[x[1]] for x in which_are_strong]
-    if isinstance(gene_fit_d['g'], pd.DataFrame):
-        locusIds = gene_fit_d['g']['locusId']
-    else:
-        locusIds = gene_fit_d['g']
+    locusIds = gene_fit_d['g']
     stronglocusIds = locusIds.iloc[[x[1] for x in which_are_strong]]
     name_col = [x[0] for x in which_are_strong]
 
@@ -425,15 +445,19 @@ def create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, debug=False):
                     "t": strong_t,
                     "lrn": strong_lrn
                     })
-        strong_df = strong_df.astype({"locusId": str})
-
+        print(strong_df)
         sysName = []
         desc = []
+        pre_merge1 = genes_df[["locusId", "sysName", "desc"]]
+        strong_df = strong_df.merge(pre_merge1, on="locusId")
+        pre_merge2 =  exps_df[["name", "short"]]
+        strong_df = strong_df.merge(pre_merge2, on="name")
+        """
         for locusId in strong_df["locusId"]:
             if debug:
                 print(f"current locusId: {locusId}")
                 print(f"type of locusId: {type(locusId)}")
-            sysName.append(genes_df[genes_df["locusId"] == str(locusId)]["sysName"].values[0])
+            sysName.append(genes_df[genes_df["locusId"] == locusId]["sysName"].values[0])
             desc.append(genes_df[genes_df["locusId"] == str(locusId)]["desc"].values[0])
 
         strong_df["sysName"] = sysName
@@ -444,8 +468,18 @@ def create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, debug=False):
             short.append(exps_df[exps_df["name"] == exp_name]["short"].values[0])
 
         strong_df["short"] = short
-
-        write_DataFrame_and_log(os.path.join(op_dir, "strong.tab"), 
+        """
+    else:
+        strong_df = pd.DataFrame.from_dict({
+                    "locusId": [],
+                    "name": [],
+                    "t": [],
+                    "lrn": [],
+                    "sysName": [],
+                    "desc": [],
+                    "short": [] 
+        })
+    write_DataFrame_and_log(os.path.join(op_dir, "strong.tab"), 
                             strong_df, 
                             df_name="strong")
 
@@ -582,292 +616,11 @@ def combine_dataframes_on_column(df1, df2, combine_col_name, optional_str=None,
     return op_df
 
 
+def create_R_PDFs():
+    """
+    In this function we create all the PDFs that are created by R
+    using the original R code.
+    """
 
 
-    
-
-    
-
-
-
-
-
-
-
-"""
-
-FEBA_Save_Tables = function(fit, genes, org="?",
-		 topdir="data/FEBA/html/",
-		 dir = paste(topdir,org,sep="/"),
-		 writeImage=TRUE,
-		 FEBAdir="src/feba",
-		 template_file=paste(FEBAdir,"/lib/FEBA_template.html",sep=""),
-		 expsU=expsUsed,
-		 ... # for FEBA_Quality_Plot
-		 ) {
-
-    # ARGS:
-    #
-    #
-    #
-
-	if(!file.exists(dir)) dir.create(dir);
-
-	for (n in words("q lr lrn lrn1 lrn2 t")) {
-	    if (is.null(fit[[n]]) || !is.data.frame(fit[[n]])) {
-	        stop("Invalid or missing ",n," entry");
-	    }
-	}
-	if (is.null(fit$genesUsed)) stop("Missing genesUsed");
-	if (is.null(fit$g)) stop("Missing g -- versioning issue?");
-
-	if(!all(names(fit$lr) == fit$q$name)) stop("Name mismatch");
-	if(!all(names(fit$lrn) == fit$q$name)) stop("Name mismatch");
-
-	nameToPath = function(filename) paste(dir,filename,sep="/");
-	wroteName = function(x) cat("Wrote ",nameToPath(x),"\n",file=stderr());
-
-	writeDelim(fit$q, nameToPath("fit_quality.tab"));
-	wroteName("fit_quality.tab");
-
-	writeDelim(cbind(genes, used=genes$locusId %in% fit$genesUsed), nameToPath("fit_genes.tab"));
-	wroteName("fit_genes.tab");
-
-        ###
-    
-        #3
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$lr));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_logratios_unnormalized.tab"));
-	wroteName("fit_logratios_unnormalized.tab");
-
-        #4
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$lrNaive));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_logratios_unnormalized_naive.tab"));
-	wroteName("fit_logratios_unnormalized_naive.tab");
-
-        ###
-        #5
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$lrn));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_logratios.tab"));
-	wroteName("fit_logratios.tab");
-        
-        #6
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$lrn1));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_logratios_half1.tab"));
-	wroteName("fit_logratios_half1.tab");
-
-        ###
-        #7
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$lrn2));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_logratios_half2.tab"));
-	wroteName("fit_logratios_half2.tab");
-
-
-        #8
-	d = genes[genes$locusId %in% fit$g, c("locusId","sysName","desc")];
-	d$comb = paste(d$sysName, d$desc); # for MeV
-	if (sum(fit$q$u) == 0) {
-		cat("Warning: 0 OK experiments\n");
-                d = d[order(d$locusId),]; # ensure same order as other tables
-	} else {
-		d = merge(d, cbind(locusId=fit$g,fit$lrn[,fit$q$u]));
-		names(d)[-(1:4)] = paste(fit$q$name,fit$q$short)[fit$q$u];
-	}
-	writeDelim(d, nameToPath("fit_logratios_good.tab"));
-	cat("Wrote fitness for ",sum(fit$q$u), " successful experiments to ", nameToPath("fit_logratios_good.tab"),"\n",
-	    file=stderr());
-
-        ###
-        #9
-	d = genes[genes$locusId %in% fit$g, c("locusId","sysName","desc")];
-	d$comb = paste(d$sysName, d$desc); # for MeV
-        d = merge(d, cbind(locusId=fit$g, fit$tot));
-        names(d)[-(1:4)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("gene_counts.tab"));
-        wroteName("gene_counts.tab");
-    
-        #10
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$t));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_t.tab"));
-	wroteName("fit_t.tab");
-
-        #11
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$se));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_standard_error_obs.tab"));
-	wroteName("fit_standard_error_obs.tab");
-
-        #12
-	d = merge(genes[,c("locusId","sysName","desc")], cbind(locusId=fit$g,fit$sdNaive));
-	names(d)[-(1:3)] = paste(fit$q$name,fit$q$short);
-	writeDelim(d, nameToPath("fit_standard_error_naive.tab"));
-	wroteName("fit_standard_error_naive.tab");
-
-        #13
-	writeDelim(cbind(fit$strains,fit$strain_lrn)[order(fit$strains$scaffold, fit$strains$pos),],
-		nameToPath("strain_fit.tab"));
-	wroteName("strain_fit.tab");
-
-
-        ### Skipping:
-
-	FEBA_Quality_Plot(fit$q, nameToPath("fit_quality.pdf"), org, ...);
-	wroteName("fit_quality.pdf");
-
-	if(is.null(fit$pairs)) {
-		paste("No data for cofitness plot\n");
-		unlink(nameToPath("cofitness.pdf"));
-	} else {
-		FEBA_Cofitness_Plot(fit$pairs, nameToPath("cofitness.pdf"), org);
-		wroteName("cofitness.pdf");
-	}
-
-	pdf(nameToPath("fit_quality_cor12.pdf"),
-		pointsize=10, width=6, height=6,
-		title=paste(org,"Fitness Cor12 Plots"));
-	for (i in 1:nrow(fit$q)) {
-	    n = as.character(fit$q$name[i]);
-	    changers = fit$g[abs(fit$t[[n]]) >= 3];
-	    plot(fit$lrn1[[n]], fit$lrn2[[n]],
-	    		  main=sprintf("%s %s #%d (gMed=%.0f rho12=%.3f)\n%s",
-			  	org, n, fit$q$num[i], fit$q$gMed[i], fit$q$cor12[i], fit$q$short[i]),
-	    		  xlab="First Half", ylab="Second Half",
-			  col=ifelse(fit$g %in% changers, 2, 1));
-	    eqline(); hline(0); vline(0);
-	}
-         
-        ##
-
-
-
-
-
-        # Start Skip
-
-	dev.off();
-	wroteName("fit_quality_cor12.pdf");
-
-	labelAll = sprintf("%s #%d gMed=%.0f rho12=%.2f %30.30s",
-		      sub("^set","",fit$q$name), fit$q$num, fit$q$gMed, fit$q$cor12, fit$q$short);
-        labelAll = ifelse(fit$q$short=="Time0", paste(labelAll, fit$q$t0set), labelAll);
-
-	use = fit$q$short != "Time0";
-	if(sum(use) > 2) {
-	    lrClust = hclust(as.dist(1-cor(fit$lrn[,as.character(fit$q$name)[use]], use="p")));
-	    pdf(nameToPath("fit_cluster_logratios.pdf"),
-		pointsize=8, width=0.25*pmax(8,sum(use)), height=8,
-		title=paste(org,"Cluster Logratios"));
-	    plot(lrClust, labels=labelAll[use], main="");
-	    dev.off();
-	    wroteName("fit_cluster_logratios.pdf");
-	}
-
-	if (ncol(fit$gN)-1 >= 3) { # at least 3 things to cluster
-	    countClust = hclust(as.dist(1-cor(log2(1+fit$gN[fit$gN$locusId %in% fit$genesUsed,-1]))));
-	    pdf(nameToPath("fit_cluster_logcounts.pdf"),
-		pointsize=8, width=pmax(5,0.25*nrow(fit$q)), height=8,
-		title=paste(org,"Cluster Log Counts"));
-	    # Some Time0s may be missing from fit$q
-	    d = match(names(fit$gN)[-1], fit$q$name);
-	    labelAll2 = ifelse(is.na(d), paste("Time0", sub("^set","",names(fit$gN)[-1])), labelAll[d]);
-	    plot(countClust, labels=labelAll2, main="");
-	    dev.off();
-	    wroteName("fit_cluster_logcounts.pdf");
-	}
-
-        d = table(genes$scaffoldId[genes$locusId %in% fit$genesUsed]);
-	maxSc = names(d)[which.max(d)];
-	if (is.null(maxSc)) stop("Invalid scaffoldId?");
-	beg = ifelse(fit$g %in% genes$locusId[genes$scaffold==maxSc],
-	    genes$begin[match(fit$g, genes$locusId)], NA);
-
-	pdf(nameToPath("fit_chr_bias.pdf"), pointsize=10, width=6, height=6,
-	          title=paste(org,"Chromosome Bias"));
-	for (i in 1:nrow(fit$q)) {
-	    n = as.character(fit$q$name[i]);
-	    plot(beg, pmax(-2,pmin(2,fit$lr[[n]])),
-	    		  main=sprintf("%s %s #%d (gMed=%.0f rho12=%.3f)\n%s",
-			  	org, sub("^set","",n), fit$q$num[i], fit$q$gMed[i], fit$q$cor12[i], fit$q$short[i]),
-	    		  xlab="Position on Main Scaffold",
-			  ylab="Fitness (Unnormalized)",
-			  ylim=c(-2,2), col="darkgrey");
-	    o = order(beg);
-	    lines(beg[o], (fit$lr[[n]] - fit$lrn[[n]])[o], col="darkgreen", lwd=2);
-	    hline(0,lty=1,col=1);
-	}
-	dev.off();
-	wroteName("fit_chr_bias.pdf");
-
-        # Done skip
-
-        #14 expsUsed
-	if (!is.null(expsU)) {
-		writeDelim(expsU, nameToPath("expsUsed"));
-		wroteName("expsUsed");
-	}
-
-        #15 Cofit
-	if (is.null(fit$cofit)) {
-	    d = data.frame(locusId="",sysName="",desc="",hitId="",cofit=0,rank=0,hitSysName="",hitDesc="");
-	} else {
-	    d = merge(genes[,words("locusId sysName desc")], fit$cofit, by="locusId");
-	    d = merge(d, data.frame(hitId=genes$locusId, hitSysName=genes$sysName, hitDesc=genes$desc));
-	    d = d[order(d$locusId,d$rank),];
-	}
-	writeDelim(d, nameToPath("cofit"));
-	wroteName("cofit");
-
-        #16 specphe
-	if (is.null(fit$specphe)) {
-	   d = data.frame(locusId="",sysName="",desc="",name="",short="",Group="",Condition_1="",Concentration_1="",Units_1="",
-	                  Condition_2="",Concentration_2="",Units_2="");
-	   d = d[0,];
-	} else {
-	   d = merge(genes[,words("locusId sysName desc")], fit$specphe, by="locusId");
-	}
-	writeDelim(d, nameToPath("specific_phenotypes"));
-	wroteName("specific_phenotypes");
-
-        #17 Strong
-        d = which(abs(fit$lrn) > 2 & abs(fit$t) > 5, arr.ind=T);
-        if (nrow(d) >= 1) {
-	  out = data.frame(locusId=fit$g[d[,1]], name=names(fit$lrn)[d[,2]], lrn=fit$lrn[d], t=fit$t[d]);
-	  out = merge(genes[,words("locusId sysName desc")], merge(expsU[,c("name","short")], out));
-	  writeDelim(out, nameToPath("strong.tab"));
-	  wroteName("strong.tab");
-	}
-
-        #18 High
-        # High Fitness
-        writeDelim(fit$high, nameToPath("high_fitness.tab"));
-        wroteName("high_fitness.tab");
-
-	if(writeImage) {
-	    img = format(Sys.time(),"fit%Y%b%d.image"); # e.g., fit2013Oct24.image
-	    expsUsed = expsU;
-	    save(fit, genes, expsUsed, file=nameToPath(img));
-	    wroteName(img);
-	    unlink(nameToPath("fit.image"));
-	    file.symlink(img, nameToPath("fit.image"));
-	    cat("Created link for ",nameToPath("fit.image"),"\n", file=stderr());
-	}
-
-        #19 HTML:
-	if(!is.null(template_file)) {
-	    FEBA_Save_HTML(nameToPath("index.html"), template_file,
-			   list(ORG=org,
-			        NEXPS=sum(fit$q$short != "Time0"),
-				NSUCCESS=sum(fit$q$u),
-				VERSION=fit$version,
-				DATE=date()));
-	    wroteName("index.html");
-	}
-}
-"""
 

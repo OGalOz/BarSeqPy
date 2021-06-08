@@ -45,10 +45,25 @@
 14. expsUsed.tab:
     The experiments dataframe after lightly eliminating unusable experiments. 
 15. cofit.tab:
-    
+    The top 'n' cofit rows for each locusId where 'n' is computed in the function TopCofit
+    or given as an input to the program.
 16. specific_phenotypes.tab:
+    One row for each specific phenotype, which is a specific strain in an experiment.
 17. strong.tab:
+    We end up with a dataframe with a single row for every strong fit and t score
+    value (fit > 2, t >5), and we add other informational columns like 
+    'sysName', 'desc' (description) and 'short'. After all we have a dataframe 
+    with the following columns:
+        locusId, name (experiment name), t (t score), lrn (fitness score
+        (log ratio normalized)), sysName, desc, and short.
 18. high_fitness.tab:
+    The 'high' dataframe as it is, meaning the following columns:
+        'locusId', 'expName', 'fit', 't', 'nReads', 'nStrains', 'se', 
+        'sdNaive', 'name', 'Group', 'Condition_1', 'Concentration_1', 
+        'Units_1', 'Media', 'short_x', 'u', 'short_y', 'maxFit', 'gMean', 
+        'sysName', 'desc', 'nDetected'
+    The actual rows represent specific situations in which genes created
+    high fitness for bugs.
 19. html_info.json:
-
+    Contains information necessary to create the html file
 

@@ -771,7 +771,7 @@ def print_info2(central_insert_bool_list, all_df, strainsUsed, genesUsed):
 
     num_unique_locus_Ids = len(all_df['locusId'][central_insert_bool_list].unique())
 
-    logging.info(f"Using {str(len(strainsUsed))} of {num_true_central_insert_bool_list} genic strains.")
+    logging.info(f"Using {num_true_central_insert_bool_list} of { str(len(strainsUsed))} genic strains.")
     logging.info(f"Using {len(genesUsed)} of {num_unique_locus_Ids} genes with data.")
 
     return None

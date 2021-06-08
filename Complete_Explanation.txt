@@ -1,7 +1,13 @@
     TODO:
         
-        Finish writing table outputs from FEBA_Save_Tables 
-            (now on 'Gene Counts')
+
+
+        Optional: 
+            Print out PDFs using R functions - 
+                create functions that get 'fit' and 'genes' dataframes from
+                a directory - Use 'rjson'?
+
+
 
         Compare outputs from AvgStrainFitness between Python and R.
 
