@@ -38,7 +38,9 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         org_str: (str) Name of organism
         data_dir: (str) Path to directory which contains the 
                     following files: 'all.poolcount', 'genes',
-                            'exps', 'pool' - all TSV files.
+                            'exps' - all TSV files.
+                            Contains 'BSPconfig.json' - config json
+                            file.
                             Optionally contains the following files:
                                 strainusage.barcodes.json - json list
                                 strainusage.genes.json - json list
@@ -67,13 +69,36 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             "scaffoldId", "locusId", "sysName", "desc", "begin", "end"
 
     """
+
+    # Preparing config variables
+    #cfg_d = json.loads(open(os.path.join(data_dir, "BSPconfig.json")).read())
+    #print(cfg_d)
+    #stop(75)
+    cfg_d = {
+            "dp1_cfg": {
+                "drop_exps": True,
+                "okControls": False
+            },
+            "dp2_cfg": {
+                "minSampleReads" : 2*10e4,
+                "minGenesPerScaffold" : 10,
+                "minT0Strain" : 3 ,
+                "minT0Gene" : 30,
+                "minGenesAllowed": 100,
+                "minLengthGenesUsed12" : 100,
+                "okControls": False,
+                "okDay" : True,
+                "okLane" : True
+            }
+    }
     
     if start_point == 1:
         # Part 1 - Data Preparation 1
         res_dp1 = data_prep_1(data_dir,
-                          FEBA_dir, 
-                          debug_bool=False,
-                          meta_ix=meta_ix)
+                              FEBA_dir, 
+                              debug_bool=False,
+                              meta_ix=meta_ix,
+                              cfg=cfg_d["dp1_cfg"])
 
         logging.info("\n\n\nRunning Section 1 - Data Prep 1\n\n\n")
         exps_df, all_df, genes_df, genesUsed_list, ignore_list = res_dp1
@@ -92,35 +117,33 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         logging.info("\n\n\nRunning Section 2 - Data Prep 2\n\n\n")
         # Part 2 - Data Preparation 2; Control Experiments
         res_dp2 = data_prep_2(exps_df, all_df, genes_df, genesUsed_list,
-                    ignore_list, minSampleReads=2*10e4,
+                    ignore_list,
                     meta_ix=7, 
-                    okDay=True, okLane=True,
-    	            minT0Strain=3, minT0Gene=30,
-                    dbg_prnt=True,
+                    dbg_prnt=False,
                     dbg_lvl=10,
-                    export_vars_bool=True)
+                    export_vars_bool=True,
+                    cfg = cfg_d["dp2_cfg"])
     
         all_df, exps_df, genes_df, genesUsed_list = res_dp2[0]
         strainsUsed_list, genesUsed_list12, t0_gN, t0tot = res_dp2[1]
-        central_insert_bool_list, expsT0, num_vars_d = res_dp2[2]
+        expsT0, num_vars_d = res_dp2[2]
         if breakpoint_vars:
             breakpoint2("tmp/BP2", genesUsed_list, 
                 strainsUsed_list, genesUsed_list12, 
-                t0_gN, t0tot, central_insert_bool_list,
+                t0_gN, t0tot, 
                 all_df, exps_df, genes_df,
                 expsT0, num_vars_d)
     if start_point <= 3:    
         if start_point == 3:
             res_from_dir = import_start_point3_data_from_dir("tmp/BP2")
             genesUsed_list, strainsUsed_list, genesUsed_list12 = res_from_dir[0:3]
-            central_insert_bool_list, t0_gN, t0tot = res_from_dir[3:6]
-            all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
+            t0_gN, t0tot = res_from_dir[3:5]
+            all_df, exps_df, genes_df, expsT0 = res_from_dir[5:]
 
         logging.info("\n\n\nRunning Section 3 - Analysis 1\n\n\n")
         GeneFitResults = analysis_1(all_df, exps_df, genes_df,
                                 expsT0, t0tot, 
                                 genesUsed_list, genesUsed_list12, strainsUsed_list, 
-                                central_insert_bool_list, 
                                 minGenesPerScaffold=10, meta_ix=7,
                                 debug=False, nDebug_cols=None,
                                 starting_debug_col=0)
@@ -135,8 +158,8 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             # We can use results from previous imports for the rest
             res_from_dir = import_start_point3_data_from_dir("tmp/BP2")
             genesUsed_list, strainsUsed_list, genesUsed_list12 = res_from_dir[0:3]
-            central_insert_bool_list, t0_gN, t0tot = res_from_dir[3:6]
-            all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
+            t0_gN, t0tot = res_from_dir[3:5]
+            all_df, exps_df, genes_df, expsT0 = res_from_dir[5:]
       
         logging.info("\n\n\nRunning Section 4 - Analysis 2\n\n\n")
         gene_fit_d, CrudeOp_df = analysis_2(GeneFitResults, exps_df, all_df, 
@@ -157,8 +180,8 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
             # We can use results from previous imports for the rest
             res_from_dir = import_start_point3_data_from_dir("tmp/BP2")
             genesUsed_list, strainsUsed_list, genesUsed_list12 = res_from_dir[0:3]
-            central_insert_bool_list, t0_gN, t0tot = res_from_dir[3:6]
-            all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
+            t0_gN, t0tot = res_from_dir[3:5]
+            all_df, exps_df, genes_df, expsT0 = res_from_dir[5:]
 
         logging.info("\n\n\nRunning Section 5- Analysis 3\n\n\n")
         gene_fit_d = analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
@@ -173,8 +196,11 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         if start_point == 6:
             gene_fit_d = import_gene_fit_d_and_CrudeOp("tmp/BP5", CrudeOp_bool=False) 
             res_from_dir = import_start_point3_data_from_dir("tmp/BP2")
+
+
             genesUsed_list, strainsUsed_list, genesUsed_list12 = res_from_dir[0:3]
-            all_df, exps_df, genes_df, expsT0 = res_from_dir[6:]
+            t0_gN, t0tot = res_from_dir[3:5]
+            all_df, exps_df, genes_df, expsT0 = res_from_dir[5:]
             gene_fit_d['genesUsed'] = genesUsed_list
 
         logging.info("\n\n\nRunning Section 6 - FEBA Save Tables\n\n\n")
@@ -728,7 +754,7 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
 
 def breakpoint2(op_dir, genesUsed, 
                 strainsUsed, genesUsed12, 
-                t0_gN, t0tot, central_insert_bool_list,
+                t0_gN, t0tot, 
                 all_df, exps_df, genes_df, expsT0, num_vars_d):
     """
     """
@@ -739,7 +765,6 @@ def breakpoint2(op_dir, genesUsed,
     for x in [["genesUsed.json",genesUsed],
               ["strainsUsed.json", strainsUsed],
               ["genesUsed12.json", genesUsed12],
-              ["central_insert_bool_list.json", central_insert_bool_list],
               ["expsT0.json", expsT0],
               ["num_vars_d", num_vars_d]
               ]:
@@ -851,8 +876,6 @@ def import_start_point3_data_from_dir(data_dir):
     genesUsed = json.loads(open(os.path.join(data_dir, "genesUsed.json")).read())
     strainsUsed = json.loads(open(os.path.join(data_dir, "strainsUsed.json")).read())
     genesUsed12 = json.loads(open(os.path.join(data_dir, "genesUsed12.json")).read())
-    central_insert_bool_list = json.loads(open(
-                            os.path.join(data_dir, "central_insert_bool_list.json")).read())
     t0_gN  = pd.read_table(os.path.join(data_dir, "t0_gN.tsv"), dtype={"locusId": str})
     t0tot  = pd.read_table(os.path.join(data_dir, "t0tot.tsv"), dtype={"locusId": str})
     all_fp  = os.path.join(data_dir, "all_df.tsv")
@@ -863,7 +886,7 @@ def import_start_point3_data_from_dir(data_dir):
                                                     genes_fp)
     expsT0 = json.loads(open(os.path.join(data_dir, "expsT0.json")).read())
 
-    return [genesUsed, strainsUsed, genesUsed12, central_insert_bool_list,
+    return [genesUsed, strainsUsed, genesUsed12, 
             t0_gN, t0tot, all_df, exps_df, genes_df, expsT0]
 
 

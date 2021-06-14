@@ -19,7 +19,7 @@ from translate_R_to_pandas import *
 
 def analysis_1(all_df, exps_df, genes_df, 
                expsT0, t0tot, 
-               genesUsed, genesUsed12, strainsUsed, central_insert_bool_list, 
+               genesUsed, genesUsed12, strainsUsed,  
                minGenesPerScaffold=10, meta_ix=7,debug=False, nDebug_cols=None,
                starting_debug_col=0):
     """
@@ -51,7 +51,6 @@ def analysis_1(all_df, exps_df, genes_df,
             of a gene.
             It also only includes strains with locusIds that
             are in genesUsed
-        central_insert_bool_list (list<bool>): 
         starting_debug_col (int): Should we start running experiments at some point
                                   after the first option? E.g. start at experiment 20?
                                   Default is 0, so start at the beginning.
@@ -77,8 +76,8 @@ def analysis_1(all_df, exps_df, genes_df,
         we place these in a list called 'all_index_names'. We also get the subset
         of all the strains that are useful for Gene Fitness computations, the
         number of strains in this subset is the number of 'True's in the list
-        'strainsUsed', so we compute this number and name it 
-        'nAllStrainsCentralGoodGenes'. After that we get the subsets of the 
+        'strainsUsed', so we compute this number again (it is named 
+        'nAllStrainsCentralGoodGenes'). After that we get the subsets of the 
         dataframes all_df and t0tot (the Time0 totals summed over all_df) to
         be used in Gene Fitness computations later.
         Next, if one wanted to run the computations on a subset of the experiments, 
@@ -105,6 +104,10 @@ def analysis_1(all_df, exps_df, genes_df,
         within a dictionary called GeneAndStrainFit with keys being the experiment
         names, and each experiment is associated with one of the smaller dictionaries.
         We return this dictionary GeneAndStrainFitResults.
+        The internal explanation of what happens during the analysis is described 
+        in the function 'gene_strain_fit_func'.
+
+        Function descriptions:
     """
 
     # The bulk of the program occurs here: We start computing values
@@ -204,7 +207,7 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
         the strains were inserted into genes and in good locations and in abundant 
         enough amounts over genes and over scaffolds. GeneFitness returns a Dataframe,
         and is a very complicated function which is described in its own Description
-        section.
+        section; it returns a dataframe with per Gene values.
 
         
         
@@ -229,7 +232,7 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
         genesUsed12 (list<str>): list of locusIds that have both high f (>0.5) and low f (<0.5)
                     insertions with enough abundance of insertions on both sides
         minGenesPerScaffold: int
-        all_df_central_inserts (Dataframe): The parts of all_df that corresponds to True in central_insert_bool_list
+        all_df_central_inserts (Dataframe): The parts of all_df that corresponds to True in strainsUsed
                                             Num rows is nAllStrainsCentral 
         use1: boolean list for the all_df_used with 0.1 < f <0.5 is True, otherwise false,
                 Length is nAllStrainsCentralGoodGenes
@@ -361,10 +364,10 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
                                     fractional insertion values.
 
         exp_used_strains (pandas Series): with counts for the current set.indexname 
-                                 with central_insert_bool_list value true (0.1<f<0.9) [countCond]
+                                 with strainsUsed value true (0.1<f<0.9) [countCond]
         t0_used (pandas Series): with t0 counts for each strain [countT0]
-        strainsUsed_central_insert pandas Series(list<bool>): whose length is Trues in central_insert_bool_list
-                        equivalent index to central_insert_bool_list True values
+        strainsUsed_central_insert pandas Series(list<bool>): whose length is Trues in strainsUsed
+                        equivalent index to strainsUsed True values
 
 
         Length of this object is nGenesUsed 

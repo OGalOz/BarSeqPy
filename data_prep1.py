@@ -4,7 +4,7 @@ import numpy as np
 from translate_R_to_pandas import *
 
 
-def data_prep_1(data_dir, FEBA_dir, debug_bool=False, meta_ix=7):
+def data_prep_1(data_dir, FEBA_dir, debug_bool=False, meta_ix=7, cfg=None):
     """ The first phase of data preparation for the BarSeqR Computations
     Args:
         data_dir: (str) Path to directory which contains the 
@@ -17,11 +17,21 @@ def data_prep_1(data_dir, FEBA_dir, debug_bool=False, meta_ix=7):
                                 ignore_list.json - json list ( list of str 
                                             with sample-index name to ignore )
                     All these files are changed depending on the input.
-
         FEBA_dir: (str) Path to directory which contains the 
                     following files: 'desc_short_rules'
         debug_bool: Whether you'd like to print the dataframes
                 as a test to the data_dir before running FEBA_Fit
+        meta_ix (int): The number of meta column indeces in all.poolcount
+        cfg (python dict): The default and config variables required:
+                            drop_exps (bool): Do we drop the 'Drop' experiments
+                                              from the experiments dataframe
+                                              already?
+                            okControls (bool): Are we defining controls by
+                                               the method where it's written
+                                               into the Experiments file?
+                                
+                                            
+                        
 
     Returns:
         list<exps_df, all_df, genes_df, 
@@ -45,10 +55,14 @@ def data_prep_1(data_dir, FEBA_dir, debug_bool=False, meta_ix=7):
         Within data_prep1 we perform the following functions:
           getDataFrames:
             We import the tables genes, all, exps, rules using a dict to say which 
-              data type is in each column.
-            We might remove the rows who have 'Drop' set to True (if drop_exps==True).
-            We remove the spaces from the values in 'Group', 'Condition_1', 'Condition_2'
+              data type is in each column. The dataframes we get are called:
+                genes_df, all_df, exps_df, rules_df
+            Within exps_df:
+              We optionally remove the rows who have 'Drop' set to True (if drop_exps==True).
+              We strip (remove the spaces from) the values in 'Group', 
+              'Condition_1', 'Condition_2'
             We check that the right column names exist in each of the tables.
+          
           checkLocusIdEquality:
             We check all the locusIds in all_df are also present in genes_df
             If debugging we also print the number of unique locusIds in each.
@@ -56,27 +70,43 @@ def data_prep_1(data_dir, FEBA_dir, debug_bool=False, meta_ix=7):
             We check that the index names in all.poolcount are equivalent to the 
                 'SetName' + '.' + 'Index' in exps
           prepare_set_names:  
-            We replace the SetNames from the complicated version to a simpler one,
+            We replace the SetNames from their original version to a simplified standard one,
             remove the period in between SetName and Index in all.poolcount columns,
             and make the 'names' column in the experiments file and the all.poolcount columns
             have the same values. For example, we move column name from Keio_ML9_set2.IT004 to 
             set2IT004, and rename the values in the Experiments file similarly.
           get_special_lists:
-            We get the lists from the files in data_dir if they are there.
-            Otherwise we return their values as None.
-
-        If debug_bool we print out resultant exps, all, genes to 'tmp' dir
+            We get the lists from the files in data_dir if they are there,
+            otherwise we return their values as empty lists. The lists we
+            look for are genesUsed, which should be a list of locusIds
+            from this genome that we are using, and ignore_list, which is a list
+            of experiment names to ignore (columns from all.poolcount).
+        If debug_bool is set to true we print out resultant exps, all, genes to 'tmp' dir
+        We return the following variables: 
+            'exps_df' (The experiments dataframe)
+            'all_df' (The barcodes and locations dataframe)
+            'genes_df' (The total genes dataframe)
+            'genesUsed_list' (A python list of locusIds that we will use)
+            'ignore_list' (A python list of experiment names to ignore)
           
     """
 
-    genes_df, all_df, exps_df, rules_df = getDataFrames(data_dir, FEBA_dir, dbg_lvl=2)
+    genes_df, all_df, exps_df, rules_df = getDataFrames(data_dir, FEBA_dir, 
+                                                        drop_exps=cfg['drop_exps'],
+                                                        okControls = cfg['okControls'],
+                                                        dbg_lvl=0)
 
     # Makes no changes to the variables
     checkLocusIdEquality(all_df, genes_df, debug_bool=debug_bool)
+
     # We check that SetNames and Indexes in experiments file match all.poolcount file
-    check_exps_df_against_all_df(exps_df, all_df, meta_ix, debug_bool=debug_bool)
+    check_exps_df_against_all_df(exps_df, all_df, meta_ix)
+
     # We make it so the names are cleaner and create 'names', 'num', 'short' in exps_df
-    exps_df, all_df, replace_col_d = prepare_set_names(exps_df, all_df, rules_df, debug_bool=debug_bool)
+    exps_df, all_df, replace_col_d = prepare_set_names(exps_df, all_df, rules_df, 
+                                                        okControls=cfg['okControls'],
+                                                        meta_ix=meta_ix,
+                                                        debug_bool=debug_bool)
 
     genesUsed_list, ignore_list = get_special_lists(data_dir, all_df,
                                                     replace_col_d, debug_bool=debug_bool)
@@ -89,12 +119,13 @@ def data_prep_1(data_dir, FEBA_dir, debug_bool=False, meta_ix=7):
     return [exps_df, all_df, genes_df, genesUsed_list, ignore_list]
 
 
-def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
+def getDataFrames(data_dir, FEBA_dir, drop_exps=False, 
+                  okControls=False, dbg_lvl=0):
     """
     Args:
         data_dir: (str) Path to directory which contains the 
                     following files: 'all.poolcount', 'genes',
-                            'exps', 'pool' - all TSV files.
+                            'exps' - all TSV files.
                             Optionally contains the following files:
                                 strainusage.barcodes.json - json list
                                 strainusage.genes.json - json list
@@ -127,8 +158,9 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
 
     Description:
         We import the tables using a dict to say which data type is in each column.
-        We might remove the rows who have 'Drop' set to True (if drop_exps==True).
-        We remove the spaces from the values in 'Group', 'Condition_1', 'Condition_2'
+        In exps_df:
+          We might remove the rows who have 'Drop' set to True (if drop_exps==True).
+          We remove the spaces from the values in 'Group', 'Condition_1', 'Condition_2'
         We check that the right column names exist in each of the tables.
 
     To Do:
@@ -143,14 +175,13 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
                             " Currently missing: " + x)
 
 
-    all_fp = os.path.join(data_dir,"all.poolcount")
-    genes_fp = os.path.join(data_dir,"genes")
-    exps_fp = os.path.join(data_dir,"exps")
-    pool_fp = os.path.join(data_dir,"pool")
+    all_fp = os.path.join(data_dir, "all.poolcount")
+    genes_fp = os.path.join(data_dir, "genes")
+    exps_fp = os.path.join(data_dir, "exps")
     short_rules_fp = os.path.join(FEBA_dir, "desc_short_rules.tsv")
 
     # Checking access permissions
-    for x in [all_fp, genes_fp, exps_fp, pool_fp]:
+    for x in [all_fp, genes_fp, exps_fp]:
         if not os.access(x, os.R_OK):
             raise Exception("To run, program requires read permission to file " + x)
 
@@ -189,36 +220,38 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
             "Group": str,
             "Drop": str,
             "Condition_1": str,
-            "Condition_2": str
+            "Condition_2": str,
+            "control_group": str,
+            "control_bool": str
     }
     exps_df = pd.read_table(exps_fp, dtype=exps_dtypes)
 
     # We update the 'Drop' experiments
     if 'Drop' in exps_df:
         new_drops = []
-        remove_indeces = []
         for ix, value in exps_df['Drop'].items():
-            if isinstance(value, str):
-                if value.strip().upper() == "TRUE":
-                    new_drops.append(True)
-                    remove_indeces.append(ix)
-                else:
-                    new_drops.append(False)
-            else:
+            if value.strip().upper() == "TRUE":
+                new_drops.append(True)
+            elif value.strip().upper() == "FALSE":
                 new_drops.append(False)
+            else:
+                raise Exception(f"Cannot recognize Drop value in row {ix}:"
+                                f" {value}")
         exps_df['Drop'] = new_drops
-
     else:
         exps_df['Drop'] = [False]*exps_df.shape[0]
 
+    """
     if drop_exps:
         # Removing Drop rows
         exps_df.drop(remove_indeces, axis=0, inplace=True)
+    """
 
     # Remove trailing spaces:
-    for x in ["Group", "Condition_1", "Condition_2"]:
+    for x in ["Group", "Condition_1", "Condition_2", "control_bool"]:
         if x in exps_df:
-            # We take the entire column (pandas Series) and strip the spaces
+            # We take the entire column (pandas Series) and remove the spaces
+            #   from either end
             exps_df[x] = exps_df[x].str.strip()
 
 
@@ -228,7 +261,7 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
     }
     rules_df = pd.read_table(short_rules_fp, keep_default_na=False, dtype=rules_dtypes)
 
-
+    # Checking genes.GC
     for x in ["scaffoldId", "locusId", "sysName", "desc", "begin", "end"]:
         if x not in genes_df.columns:
             raise Exception(f"Genes table must include header {x}")
@@ -236,6 +269,13 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False, dbg_lvl=0):
     for x in ["SetName", "Index", "Date_pool_expt_started", "Description"]:
         if x not in exps_df.columns:
             raise Exception(f"Experiments table must include header {x}")
+    if okControls:
+        for x in ["control_group", "control_bool"]:
+            if x not in exps_df.columns:
+                raise Exception("If okControls is set To True, then "
+                                f"experiments table must include header {x}")
+
+    # Checking all_df
     for x in ["scaffold", "locusId", "f", "pos"]:
         if x not in all_df.columns:
             raise Exception(f"All.PoolCount file must include header {x}")
@@ -294,7 +334,13 @@ def checkLocusIdEquality(all_df, genes_df, debug_bool=False):
 
 
 
-def check_exps_df_against_all_df(exps_df, all_df, meta_ix, debug_bool=True):
+def check_exps_df_against_all_df(exps_df, all_df, meta_ix):
+    """
+    We make sure that all the experiment names left in the all_df dataframe
+        are the same as the experiment names in the rows of the experiments
+        dataframe.
+    """
+
     experiment_names_test = [exps_df['SetName'].iat[i] + "." + exps_df['Index'].iat[i] for i in \
                         range(len(exps_df['SetName']))]
     index_names = list(all_df.head())[meta_ix:]
@@ -310,13 +356,13 @@ def check_exps_df_against_all_df(exps_df, all_df, meta_ix, debug_bool=True):
                             f"{exps_fp} at index {i}")
 
 
-    if debug_bool:
-        logging.info("Checking length and names passed")
+    logging.debug("There are the same experiment names in all_df and exps_df.")
 
 
 
 
-def prepare_set_names(exps_df, all_df, rules_df, debug_bool=False):
+def prepare_set_names(exps_df, all_df, rules_df, 
+                      okControls=False, meta_ix=7, debug_bool=False):
     """
 
 
@@ -326,6 +372,12 @@ def prepare_set_names(exps_df, all_df, rules_df, debug_bool=False):
         and make the 'names' column in the experiments file and the all.poolcount columns
         have the same values. For example, we move column name from Keio_ML9_set2.IT004 to 
         set2IT004, and rename the values in the Experiments file similarly.
+        We also add multiple new columns to exps_df:
+            "num", "short", "name", "t0set"
+        We also make sure that any experiment with its "Group" being "Time0" has
+        its short as "Time0" as well.
+        We initialize the 't0set' column as being the date + the set name (lane).
+
     """
 
     # Below is a numpy array, not a series
@@ -374,7 +426,22 @@ def prepare_set_names(exps_df, all_df, rules_df, debug_bool=False):
         logging.info(expNamesNew)
 
     exps_df['num'] = range(1, exps_df.shape[0] + 1)
-    exps_df['short'] = pd.Series(applyRules(rules_df, list(exps_df['Description'])))
+    # We replace certain strings with others using the 'rules' table.
+    exps_df['short'] = applyRules(rules_df, list(exps_df['Description']))
+
+    if okControls:
+        if not "control_bool" in exps_df.columns:
+            raise Exception("Using manual control label but no column "
+                            "'control_bool' in Experiments file!")
+        else:
+            for ix, val in exps_df["control_bool"].iteritems():
+                if val.strip().upper() == "TRUE":
+                    exps_df["short"].loc[ix] = "Time0"
+                else:
+                    # Should not be a Time0 short
+                    if exps_df["short"].loc[ix].upper() == "TIME0":
+                        raise Exception("Description of experiment indicates Time0, but"
+                                        f" value in control_bool is not 'True', instead '{val}'.")
     
 
     if debug_bool:
@@ -382,7 +449,7 @@ def prepare_set_names(exps_df, all_df, rules_df, debug_bool=False):
         logging.info(exps_df['short'])
 
     # We remove the "." in the names of the values. Just SetNameIndex now
-    replace_col_d = {list(all_df.head())[7 + i]: expNamesNew[i] for i in range(len(expNamesNew))}
+    replace_col_d = {list(all_df.head())[meta_ix + i]: expNamesNew[i] for i in range(len(expNamesNew))}
     if debug_bool:
         logging.info('replace_col_d')
         logging.info(replace_col_d)
@@ -400,13 +467,21 @@ def prepare_set_names(exps_df, all_df, rules_df, debug_bool=False):
     # updating short to include Groups with Time0
     num_time_zero = 0
     for ix, val in exps_df['Group'].items():
-        if val.upper() == "TIME0":
+        if val.strip().upper() == "TIME0":
             num_time_zero += 1
             exps_df.loc[ix, 'short'] = "Time0"
 
     # Updating column 't0sets' which refers to the date and SetName
     exps_df['t0set'] = [exps_df['Date_pool_expt_started'].iat[ix] + " " + \
                         val for ix, val in exps_df['SetName'].items()]
+
+    if okControls:
+        if not "control_group" in exps_df.columns:
+            raise Exception("Using manual control label but no column "
+                            "'control_group' in Experiments file!")
+        else:
+            for ix, val in exps_df["control_group"].iteritems():
+                exps_df['t0set'].loc[ix] = val
 
     if debug_bool:
         logging.info('exps_df short: ')
@@ -521,10 +596,10 @@ def get_special_lists(data_dir, all_df, replace_col_d, debug_bool=False):
         ignore_list: List<str> New names for the experiments we want to ignore.
 
     Description: We get the lists from the files in data_dir if they are there.
-                Otherwise we return their values as empty lists.
-                Specifically we look for genesUsed, which should be a list of locusIds
-                    from this genome that we are using, and ignore_list, which is a list
-                    of experiment names to ignore (columns from all.poolcount)
+                Otherwise we return their values as empty lists. The lists we
+                look for are genesUsed, which should be a list of locusIds
+                from this genome that we are using, and ignore_list, which is a list
+                of experiment names to ignore (columns from all.poolcount)
     """
 
     genesUsed_list = []

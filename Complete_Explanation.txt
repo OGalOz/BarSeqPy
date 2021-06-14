@@ -1,6 +1,8 @@
     TODO:
         
-
+        
+        Writen full arguments for data_prep2, explain how the dataframes
+                changed within data_prep1
 
         Optional: 
             Print out PDFs using R functions - 
@@ -39,6 +41,7 @@
         getStrainPseudoCount
     
     Vocabulary:
+        Read: A single 4-line component in a FASTQ file.
         exp_name: Experiment name, string, like 'set2IT008' the name of a specific experiment.
         SetName: Like 'set2', a more general collection of experiments, within which indexes 
                  define experiments.
@@ -48,6 +51,12 @@
                 Each barcode and location is essentially a 'strain', and the number
                 of times that strain appears is correlated with the number of
                 reads found.
+        Control and Time0 used interchangeably
+        t0set and Control Group and date are the same (for now)
+            Note that t0set at first is Date_pool_expt_started + SetName
+                for each row in exps_df
+        Gene and LocusId used interchangeably
+        Lane and SetName used interchangeably
 
     Function Descriptions:
         Use 'Rapid Quantification of Mutant Fitness in 
@@ -125,8 +134,8 @@
             When computing Gene Fitness, we use a subset of all.poolcount in which 
             the strains were inserted into genes and in good locations and in abundant 
             enough amounts over genes and over scaffolds. GeneFitness is a very complex 
-            function which is described in its own Description section, it returns
-            a dataframe which per Gene values.
+            function which is described in its own Description section; it returns
+            a dataframe with per Gene values.
 
         GeneFitness (analysis1):
             This runs on every experiment (set + Index name).
@@ -330,16 +339,18 @@
             of a gene.
 
         What are main lengths and how do they relate to lengths of input variables?
-        Main lengths:
+        Main lengths/ Numbers:
             nAllStrains = number of rows ( all.poolcount )
             nAllStrainsCentral = number of rows in all.poolcount with 0.1<f<0.9
             nAllStrainsCentralGoodGenes = number of rows in all.poolcount with 0.1<f<0.9
                                           AND all locusIds are in the list 'GenesUsed'
                                             (27659 in Keio) - also known as nUsefulReads
+                                            This is the same as nStrainsUsed
             nAllStrainsCentralGoodGenes12 = number of rows in all.poolcount with 0.1<f<0.9
                                           AND all locusIds are in the list 'GenesUsed12'
                                             (27659 in Keio) - also known as nUsefulReads
             nAllStrainsCentralGoodGenes* = either of nAllStrainsCentralGoodGenes(12) 
+            nStrainsUsed  = nAllStrainsCentralGoodGenes, just another name.
             nTotalGenes = number of rows (genes.GC)
             nGenesUsed = (len(genesUsed)) number of rows in genes.GC that we actually use
                         which is equivalent to the number of unique genes
@@ -481,19 +492,140 @@
                 the gene in terms of length, then its 'f' would be 0.25.
                 For each identifier for an experiment, we count the number of times
                 that strain appears.
+                All the locusIds in all.poolcount have to exist in the genes file (genes.GC)
+                Required columns:
+                    "barcode": str,
+                    "rcbarcode": str,
+                    "scaffold": str,
+                    "strand": str,
+                    "pos": int,
+                    "locusId": str,
+                    "f": float
+            genes:
+                Column explanation:
+                    The locusId of the gene. Must be the same locusId as in 'all.poolcount'
+                    'scaffoldId': Must be the same scaffoldId as 'scaffold'(Id??) in all.poolcount. 
+                    begin: integer beginning position of gene
+                    end: integer ending position of gene
+                    strand: '+' or '-'
+                    name: the shortened name of the gene (optional), e.g. pykA
+                    desc: The description of what the gene does, free text with no tabs!
+                    GC: The GC percentage of the gene
+                    nTA: The number of 'TA's in the gene sequence
+                Required columns: 
+                    "locusId": str,
+                    "sysName": str,
+                    "type": int,
+                    "scaffoldId": str,
+                    "begin": int,
+                    "end": int,
+                    "strand": str,
+                    "name": str,
+                    "desc": str,
+                    "GC": float,
+                    "nTA": int
+            exps:
+                If you want to drop an experiment (row in experiments file), you must create a column
+                 called 'Drop' and write in "true" (upper or lower cases don't matter). You can leave
+                 this column in the other experiments as nothing. You can also remove the row representing
+                 the experiment from the file entirely.
+                The 'SetName' column contains the setname (lane) the experiments come from, 
+                where as the 'Index' is more specifically the exact solution. 
+                So the 'SetName' + 'Index' indicates a unique collection.
+                In order to indicate an experiment is a control experiment, label the "Group"
+                value as "Time0". Otherwise, you can create columns 'control_group' and 
+                'control_bool' to define the control groups.
+                Optional: 'control_group' and 'control_bool' (Must be there if okControls
+                            is set to True). In order to indicate an experiment is a control,
+                            or a 'Time0', then set the 'Description' value of that experiment
+                            to 'Time0' and set the Growth value to 'Time0'.
+                Columns and types:
+                    "SetName": str,
+                    "Index": str,
+                    "Date_pool_expt_started": str,
+                    "Description": str ("Time0" for control),
+                    "Group": str (Time0 for Control or other groups),
+                    ["Drop"]: str, ("True" or "False")
+                    "Condition_1": str,
+                    "Condition_2": str,
+                    [control_group]: str, Name of Control group overall, can be anything
+                    [control_bool]: str ("True" or "False")
+                
+
+            BSPconfig.json:
+                This json file contains all the debugging and thresholds and other variables
+                throughout the program:
+                   dp1_cfg (dict): (data prep 1 config)
+                       drop_exps (bool): Drop bad experiments? 
+                       okControls (bool): This is set if we are using new version 
+                                    of setting control groups, where Time0s 
+                                    are entirely defined under 
+                                    control_group AND control_bool, where control_group
+                                    is the name of the overall control group, and
+                                    control_bool is True if this is a control
+                                    experiment. Otherwise Control may be defined
+                                    under 'Group', if 'Group' is 'time0' then
+                                    we know it is a control or Time0 experiment.
+                   dp2_cfg (dict): (data prep 2 config)
+                       minSampleReads (int): What is the minimum number of reads for an 
+                                 experiment to be used in the analysis?
+                       minGenesPerScaffold (int): What is the minimum number of genes
+                                 in a scaffold for the scaffold to
+                                 be used in the analysis?
+                       minT0Strain (int): What is the minimum mean per strain
+                                 from the T0 (control) experiments? For example,
+                                 there are 4 T0 experiments; we go through
+                                 each strain and take the mean over those
+                                 4 T0 experiments. If the mean is less
+                                 than minT0Strain, then we don't use that
+                                 strain, otherwise we keep it.
+                       minT0Gene (int): What is the minimum MEAN of a specific
+                                 gene over all the Time0s (aggregated for
+                                 locusIds). In other words, suppose there are 3
+                                 control (Time0) groups. Each of those 3 control
+                                 groups have two experiments that contribute to
+                                 them. We take the sum of the 2 experiments for 
+                                 each control group and create a dataframe with
+                                 as many rows as nStrainsUsed and with 3 columns,
+                                 one for each strain. Then we take the sum of those 
+                                 2-experiment sums over the locusIds, so now we have 
+                                 a dataframe whose number of rows is the number of 
+                                 unique locusIds. Then we take the average of
+                                 those 3 controls per locusId, and check if
+                                 that is greater than minT0Gene. If it is,
+                                 then we keep that locusId, otherwise, we 
+                                 don't use that locusId.
+                       minLengthGenesUsed12 (int): The minimum total number of genes
+                                 that have enough abundance of insertions on
+                                 both sides.
+                       okControls (bool): This is set if we are using new version 
+                                    of setting control groups, where Time0s 
+                                    are entirely defined under 
+                                    control_group AND control_bool, where control_group
+                                    is the name of the overall control group, and
+                                    control_bool is True if this is a control
+                                    experiment.
+                       okDay (bool): use Time0 (control) from another day on the same lane
+                       okLane (bool):  compare to Time0 from another lane
+
+            Optionally contains:
+                strainusage.barcodes.json - json list
+                strainusage.genes.json - json list
+                strainusage.genes12.json - json list
+                ignore_list.json - json list ( list of str 
+                                    with sample-index name to ignore )
+
+            FEBA_dir: These input files are fixed:
+                desc_short_rules.tsv - Contains columns 'V1' and 'V2' which 
+                                        describe input and replacement strings
+
+    
 
 
-        
+
+
        All the locusIds in all.poolcount have to exist in the genes file (genes.GC)
 
-       Experiments File:
-        If you want to drop an experiment (row in experiments file), you must create a column
-         called 'Drop' and write in "true" (upper or lower cases don't matter). You can leave
-         this column in the other experiments as nothing. You can also remove the row representing
-         the experiment from the file entirely.
-        The 'SetName' column contains the setname (lane) the experiments come from, 
-        where as the 'Index' is more specifically the exact solution. 
-        So the 'SetName' + 'Index' indicates a unique collection.
 
         Don't allow users to add 'strainsUsed'
         
