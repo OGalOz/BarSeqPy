@@ -12,7 +12,7 @@ from translate_R_to_pandas import *
 
 def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
                genesUsed, strainsUsed, genesUsed12,
-               t0_gN, t0tot, CrudeOp_df, central_insert_bool_list,
+               t0_gN, t0tot, CrudeOp_df, 
                compute_cofit_bool=True, compute_High_bool=True,
                nTopCofit=None,
                meta_ix=7, minT0Strain=3, 
@@ -144,8 +144,12 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
             "high" contains instances where we find both fitness values AND
             t scores that pass thresholds as well as a number of other
             columns from the experiments dataframe and the genes dataframe.
+
+        The function ends and we return gene_fit_d.
             
     """
+
+
 
     gene_fit_d['genesUsed'] = genesUsed
     gene_fit_d['strainsUsed'] = strainsUsed
@@ -153,7 +157,7 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
     gene_fit_d['t0_gN'] = t0_gN
     # gN is a dataframe with as many columns as experiments and as many
     # rows as there are unique locusIds in the all_df column 'locusId'
-    gene_fit_d['gN'] = get_all_gN(all_df, central_insert_bool_list, meta_ix)
+    gene_fit_d['gN'] = get_all_gN(all_df, meta_ix)
   
 
     if compute_cofit_bool:
@@ -175,7 +179,7 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
 
 
 
-def get_all_gN(all_df, central_insert_bool_list, meta_ix):
+def get_all_gN(all_df, meta_ix):
     """
     Description:
         We get the sums over unique locus Ids and reads centrally within
@@ -190,6 +194,9 @@ def get_all_gN(all_df, central_insert_bool_list, meta_ix):
                                     experiments. The values are the sums
                                     over the locusIds.
     """
+
+
+    central_insert_bool_list = [True if (0.1<=x<=0.9) else False for x in all_df['f']]
 
     # We get the subset of the experiments in all_df who have central genes
     tmp_all_df = all_df.iloc[:,meta_ix:][central_insert_bool_list]

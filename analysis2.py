@@ -30,7 +30,7 @@ All functions and subroutines:
 
 
 
-def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_list,
+def analysis_2(GeneFitResults, exps_df, all_df, genes_df, 
                strainsUsed_list, t0tot,
                meta_ix=7, debug=False, minT0Strain=3):
     """
@@ -114,74 +114,119 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
             version (str)
 
     Description:
-        First thing, we create gene_fit_d.
-            We take the GeneFitResults, which is a dict that
-            has keys being the experiment names, and we convert it to
+        First thing, we create 'gene_fit_d', which is a python dict.
+            We take the GeneFitResults, a python dict that
+            has keys being the experiment names and dataframes with
+            categories (like log ratios) being the values, and we convert it to
             a dict with each category being a key, and those point
             to dataframes with each column being an experiment name,
             and each row being associated with one gene, the genes
             being denoted by a pandas Series within the dictionary
-            under the key 'g'. This pandas series 'g' contains the locusIds (strings).
+            under the key 'g'. (This pandas series 'g' contains the 
+            locusIds (strings)).
             Another thing we do in this creation of gene_fit_d, is 
             we replace the key 'fitnorm' with 'lrn' (for log ratios
             normalized) and 'fit' with 'lr' (for just log ratios).
         Then we initialize the Quality DataFrame. 
-            We only take the experiments that are found in the log ratios 
-            normalized head. Meaning we only take the experiments 
+            Out of the rows of exps_df, we only take the experiments 
+            that are found in the columns of the dataframe of normalized
+            log ratios. Meaning we only take the experiments 
             that passed the thresholds necessary to have analysis
             performed on them. We take these rows from the dataframe
             'exps_df' but only the columns "name", "short", and "t0set",
-            all other columns we ignore.
+            all other columns we ignore. We find these rows through the column
+            "name".
         Next we run FitReadMetrics and FitQuality in order to add 
             more columns to our Quality DataFrame.
-        In FitReadMetrics we sum the reads for each experiment
-            for the following 3 values: Total Reads, Reads pastEnd,
-            reads with good insertions. We return a dataframe
-            where each row is an experiment, and the columns
-            are the above 3 categories, named "nMapped", "nPastEnd",
-            and "nGenic".
+        FitReadMetrics:
+            We take the subset of all_df with the used experiment names
+            as the columns (all rows included), and we compute the sums
+            over all rows for each of the experiments for the following:
+            nMapped (the total number of reads mapped under that column).
+            nPastEnd (the total number of pastEnd reads under that column).
+            nGenic (the total number of reads with good gene insertions).
+            Good gene insertions means inserted between .1 and .9 as 'f'.
+            Then we create a dataframe whose index is the experiment
+            names and the columns are 'nMapped', 'nPastEnd' and 'nGenic',
+            so the number of rows of the dataframe is the same as the
+            number of good experiments, whereas the number of columns
+            is fixed to 3.
         In FitQuality we create 12 metrics based on correlations
             and finding adjacent pairs of genes or genes that are
             expected to be in the same operon based on their distance.
+            First we get the dataframe crudeOpGenes, which is similar to the genes_df dataframe
+            in terms of its columns, but it is a dataframe with pairs of consecutive 
+            genes from genes_df, with an extra column 'Sep' denoting the distance
+            between the genes, and a column 'bOp' that says whether this distance
+            is less than the median distance or not (True if less, False if greater).
+            We get another similar dataframe called adj which are the adjacent pairs
+            but without the Sep or bOp values. (Can we not use this dataframe?)
+            Then we get the matching index between gene_fit_d genes (under the
+            column name 'g') and the locusIds in genes_df. Using these matching index,
+            we compute the correlation between each column in the normalized log ratios
+            dataframe and the GC values of those genes.
+            in genes_df. GC_corr is a pandas Series whose length is the number
+            of experiments (columns) in gene_fit_d['lrn']; where the index
+            labels are the experiment names, and the values are the Pearson 
+            correlations. 
+            Finally, we compute statistics regarding the experiments and return
+            a dataframe with the following labels and meanings:
+            "nUsed" (int): Sum over all locusIds of the sum over the locusId (Sum of sum) per experiment
+            "gMed" (int): Median of all locusIds over the sums per locusId per experiment
+            "gMedt0" (int): Median over the time0 totals per experiment
+            "gMean" (float): Mean of all locusIDs over the sums per locusId per experiment
+            "cor12" (float): Correlation of normalized log ratios between first and second half 
+                             gene insertion locations per experiment
+            "mad12" (float): Medians of the Absolute values of the differences between first and second half
+                                normalized log ratios.
+            "mad12c" (float): Median of some statistic over all experiments
+            "mad12c_t0" (float): Same as above but over the time0s
+            "opcor" (float): Correlation between normalized log ratios of pairs of genes predicted to be 
+                     in the same operon per experiment
+            "adjcor" (float): Correlation between normalized log ratios of pairs of adjacent genes per experiment
+            "gccor" (float): Correlation between normalized log ratios of genes and their GC percentage per experiment
+            "maxFit" (float): The maximum normalized log ratio value per experiment
 
-            The values it computes are: (for the following, tot is sum of reads over a gene)
-                "nUsed" (int): Sum over all locusIds of tot per experiment
-                "gMed" (int): Median of all locusIds over tot per experiment
-                "gMean" (float): Mean of all locusIDs over tot per experiment
-                "gMedt0" (int): Median over the time0 totals per experiment
-                "cor12" (float): Correlation of normalized log ratios between first and second half 
-                         gene insertion locations per experiment
-                "mad12" (float): Medians of the Absolute values of the differences between first and second half
-                            normalized log ratios.
-                "mad12c" (float): Median of some statistic over all experiments
-                "mad12c_t0" (float): Same as above but over the time0s
-                "opcor" (float): Correlation between normalized log ratios of pairs of genes predicted to be 
-                         in the same operon per experiment
-                "adjcor" (float): Correlation between normalized log ratios of pairs of adjacent genes per experiment
-                "gccor" (float): Correlation between normalized log ratios of genes and their GC percentage per experiment
-                "maxFit" (float): The maximum normalized log ratio value per experiment
-            For more details on what it does refer to the function description (FitQuality) itself.
         We combine the initialized Quality DataFrame, the Fit Read
         Metrics DataFrame and the FitQuality DataFrame and that's
         our current Quality DataFrame, which contains 19 (or possibly 18) columns,
         and the number of rows is equal to the total number of 
         good experiments (so it varies per run).
-        Now we go through each experiment in the Quality DataFrame (each
-        row) and measure whether certain column values pass thresholds in 
-        order to define the experiment's status. We create a status for
-        each experiment, and if all of the values are in a good range,
-        the experiment is given the status "OK". Then we create a column
-        called 'u', in which we go through each experiment, and if it's 
-        status is "OK", then we give it the value True, otherwise it's
+        Then we run the function FEBA_Exp_Status
+        FEBA_Exp_Status:
+            For each row in the Quality DataFrame, we check the values under 
+            certain columns to decide how to label it's quality.
+            The values we check, in this order, are:
+            1. Is it a Time0? ("Time0")
+            2. Does it have a low Median over the sums over locusIds? ("low_count")
+                - param 'min_gMed'
+            3. Does it have a high Median of the differences between first and
+                second half log ratios? ("high_mad12") - param 'max_mad12' 
+            4. Is there a low correlation between the first and second half
+                log ratios? ("low_cor12") - param 'min_cor12'
+            5. Is the GC correlation high or is the adjacent genes correlation
+                high? ("high_adj_gc_cor") - params 'max_gccor' & 'max_adjcor'
+            If none of these are True, then the experiment is given the status
+            "OK". Otherwise, it returns the first value for which it is 
+            True in the above questions, the value it returns is the
+            string in parentheses.
+            The whole function returns a pandas series the length of which
+            is the number of rows in quality_df.
+        Now we continue to add on to the quality dataframe by creating
+        a column
+        called 'u', in which we go through each experiment, and if its 
+        status is "OK", then we give it the value True, otherwise it is
         given the value False. So 'u' contains whether the experiment
-        has a status that passed. We add the column 'u' to the Quality
-        DataFrame, making it have 20 columns total.
-        Now we shift our focus to the 'strains' DataFrame. First,
-        we only take the metadata columns from all.poolcount,
+        has a status that passed. After adding the column 'u' to the 
+        Quality DataFrame, it has 20 (or 19) columns total.
+
+        We shift our focus to the 'strains' DataFrame. 
+        First, we only take the metadata columns from all.poolcount,
         meaning the columns:
         'barcode', 'rcbarcode', 'scaffold', 'strand', 'pos', 'locusId', 'f'
         and add new columns to it:
-        'used': which strains were used to compute Gene Fitness
+        'used': which strains were used to compute Gene Fitness (just the
+            strainsUsed List as a column.)
         'enoughT0': which strains had a high enough Mean within T0s
 
         Now we create two important dataframes:
@@ -193,8 +238,58 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
             names and the values as the columns beneath them.
 
         Next we normalize the strain fitness values (creating
-        the dataframe 'strain_lrn').
+        the dataframe 'strain_lrn'). We use the function
+        normalize_per_strain_values:
+            First, for every strain, we find the closest gene center from our list of used genes
+            (genes that passed all the thresholds to be used). We call this list 'strainToGene'.
+            So for strains that are within a gene, their closest gene will also be the gene
+            that they are inserted into.
+            Next, we create a dataframe that is the difference between the normalized log
+            ratio values per experiment per gene, and the log ratio values per gene (that 
+            are not normalized). 
+            Then, for each strain, we normalize its fitness values in a complicated way.
+            The way in which the fitness values are normalized are the following:
+            create_strain_lrn:
+                First, for each experiment, we take the per gene difference between 
+                the normalized log ratio and the plain old log ratio, and then we 
+                map those values onto all the strains using the Strain To Closest 
+                Gene series we computed earlier. So for each strain, we take the 
+                closest Gene and place the difference between the normalized 
+                log fitness and the regular log fitness in a pandas Series we call 
+                "per_strain_exp_diff". Then we group the strains by scaffold and
+                take the medians of per_strain_exp_diff by these scaffolds, and for each
+                strain, instead of having its own gene difference value, it instead now
+                has the median of all the strain difference values in the same scaffold
+                as it. Next we multiply that entire series by negative 1 and call it
+                neg_str_scf_med, for 'negative strain per scaffold median'.
+                Now we initialize the numbers we'll add to the original log ratios
+                in order to get the normalized strain values. For each value in
+                per_strain_exp_diff, if it's 'NA', then we insert the negative
+                median of the differences from neg_str_scf_med, otherwise, we leave the
+                value as it is (the per_strain_exp_diff value); we call the new series 'sdiff'.
+                To get the final normalized log ratios for the strains under this 
+                experiment, we simply add the original log ratios per strain to the values
+                in sdiff, and that's our column for this experiment.
+                The entire normalized log ratio per strain dataframe is one column
+                per experiment name.
 
+        So within the function analysis2, we have created several new dataframes
+            to the output 'gene_fit_d':
+            'q': for quality, with 20/19 columns and one row per used experiment,
+
+            ALL BELOW DATAFRAMES HAVE THEIR NUMBER OF ROWS  = nAllStrains
+            'strains': The original strains meta_ix dataframe, with two extra
+                        columns 'used' and 'enoughT0'
+            Below dataframes have number of columns = nExperimentsUsed 
+            'strain_lr': The log ratios per experiment (unnormalized)
+            'strain_se': The standard error per strain per experiment
+            'strain_lrn': The normalized log ratios per experiment
+
+            This is a pandas Series (also length nAllStrains):
+            'strainToGene': Closest gene to strain using index from 'g' pandas Series.
+
+        Function ends and returns gene_fit_d
+            
         
 
 
@@ -202,6 +297,9 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     """
 
     gene_fit_d = initialize_gene_fit_d(GeneFitResults, debug=True) 
+
+    # We recompute central_insert_bool_list:
+    central_insert_bool_list = [True if (0.1<=x<=0.9) else False for x in all_df['f']]
 
     # What is q? Quality
 
@@ -263,15 +361,13 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df, central_insert_bool_li
     strains['used'] = strainsUsed_list 
     strains['enoughT0'] = t0tot.mean(axis=1) > minT0Strain
     gene_fit_d['strains'] = strains
-
-
     gene_fit_d['strain_lr'] = pd.DataFrame.from_dict(
                             {x: list(GeneFitResults[x]['strain_fit']) for x in GeneFitResults.keys()}
                             )
     gene_fit_d['strain_se'] = pd.DataFrame.from_dict(
                             {x:list(GeneFitResults[x]['strain_se']) for x in GeneFitResults.keys()}
                             )
-    
+
     # Dataframe, Series
     strain_lrn, strainToGene = normalize_per_strain_values(strains, genes_df, gene_fit_d)
     # Num rows of strain_lrn = len strainToGene  which is nAllStrains
@@ -420,6 +516,7 @@ def FitReadMetrics(all_df, qnames, central_insert_bool_list):
         nMapped (the total number of reads mapped under that column).
         nPastEnd (the total number of pastEnd reads under that column).
         nGenic (the total number of reads with good gene insertions).
+        Good gene insertions means inserted between .1 and .9 as 'f'.
         Then we create a dataframe whose index is the experiment
         names and the columns are 'nMapped', 'nPastEnd' and 'nGenic',
         so the number of rows of the dataframe is the same as the
@@ -644,12 +741,13 @@ def FEBA_Exp_Status(quality_df, min_gMed=50, max_mad12=0.5, min_cor12=0.1,
         The values we check, in this order, are:
         1. Is it a Time0? ("Time0")
         2. Does it have a low Median over the sums over locusIds? ("low_count")
+            - param 'min_gMed'
         3. Does it have a high Median of the differences between first and
-            second half log ratios? ("high_mad12") 
+            second half log ratios? ("high_mad12") - param 'max_mad12' 
         4. Is there a low correlation between the first and second half
-            log ratios? ("low_cor12")
+            log ratios? ("low_cor12") - param 'min_cor12'
         5. Is the GC correlation high or is the adjacent genes correlation
-            high? ("high_adj_gc_cor")
+            high? ("high_adj_gc_cor") - params 'max_gccor' & 'max_adjcor'
         If none of these are True, then the experiment is given the status
         "OK". Otherwise, it returns the first value for which it is 
         True in the above questions, the value it returns is the
@@ -907,14 +1005,38 @@ def normalize_per_strain_values(strains, genes_df, gene_fit_d):
         create_strain_lrn
 
     Description:
-        First, for every strain, we find the closest gene from our list of used genes
+        First, for every strain, we find the closest gene center from our list of used genes
         (genes that passed all the thresholds to be used). We call this list 'strainToGene'.
+        So for strains that are within a gene, their closest gene will also be the gene
+        that they are inserted into.
         Next, we create a dataframe that is the difference between the normalized log
-        ratio values per experiment per gene, and the log ratio values (that are
-        not normalized). Then we normalize the Strain Fitness Values by taking
-        the median difference (from above) per scaffold and subtracting that
-        from the values themselves. We return both the normalized strain fitness
-        values and the closest mapping from strain to Gene.
+        ratio values per experiment per gene, and the log ratio values per gene (that 
+        are not normalized). 
+        Then, for each strain, we normalize its fitness values in a complicated way.
+        The way in which the fitness values are normalized are the following:
+        create_strain_lrn:
+            First, for each experiment, we take the per gene difference between 
+            the normalized log ratio and the plain old log ratio, and then we 
+            map those values onto all the strains using the Strain To Closest 
+            Gene series we computed earlier. So for each strain, we take the 
+            closest Gene and place the difference between the normalized 
+            log fitness and the regular log fitness in a pandas Series we call 
+            "per_strain_exp_diff". Then we group the strains by scaffold and
+            take the medians of per_strain_exp_diff by these scaffolds, and for each
+            strain, instead of having its own gene difference value, it instead now
+            has the median of all the strain difference values in the same scaffold
+            as it. Next we multiply that entire series by negative 1 and call it
+            neg_str_scf_med, for 'negative strain per scaffold median'.
+            Now we initialize the numbers we'll add to the original log ratios
+            in order to get the normalized strain values. For each value in
+            per_strain_exp_diff, if it's 'NA', then we insert the negative
+            median of the differences from neg_str_scf_med, otherwise, we leave the
+            value as it is (the per_strain_exp_diff value); we call the new series 'sdiff'.
+            To get the final normalized log ratios for the strains under this 
+            experiment, we simply add the original log ratios per strain to the values
+            in sdiff, and that's our column for this experiment.
+            The entire normalized log ratio per strain dataframe is one column
+            per experiment name.
 
         
         

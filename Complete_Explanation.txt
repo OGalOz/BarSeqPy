@@ -62,15 +62,180 @@
         Use 'Rapid Quantification of Mutant Fitness in 
         Diverse Bacteria by Sequencing Randomly Bar-Coded 
         Transposons' pages 12-14 as a reference
-        create_strain_lrn (analysis2): 
-            We take the strain log ratios, which are created in the function 
-            'StrainFitness' from analysis1 and we normalize them by finding
-            the median over all the values from the same scaffolds and
-            subtracting that from the log ratios.
-            We also take a dataframe that is the gene log ratios - gene
-            normalized log ratios, and if those exist at a read, then
-            we subtract those instead of the median.
 
+        data_prep_1:
+            Within data_prep1 we perform the following functions:
+                getDataFrames:
+                    We import the tables genes, all, exps, rules using a dict to say which 
+                      data type is in each column. The dataframes we get are called:
+                        genes_df, all_df, exps_df, rules_df
+                    Within exps_df:
+                      We optionally remove the rows who have 'Drop' set to True (if drop_exps==True).
+                      We strip (remove the spaces from) the values in 'Group', 
+                      'Condition_1', 'Condition_2'
+                    We check that the right column names exist in each of the tables.
+                checkLocusIdEquality:
+                  We check all the locusIds in all_df are also present in genes_df
+                  If debugging we also print the number of unique locusIds in each.
+                check_exps_df_against_all_df:
+                  We check that the index names in all.poolcount are equivalent to the 
+                      'SetName' + '.' + 'Index' in exps
+                prepare_set_names:  
+                  We replace the SetNames from their original version to a simplified standard one,
+                  remove the period in between SetName and Index in all.poolcount columns,
+                  and make the 'names' column in the experiments file and the all.poolcount columns
+                  have the same values. For example, we move column name from Keio_ML9_set2.IT004 to 
+                  set2IT004, and rename the values in the Experiments file similarly.
+                get_special_lists:
+                  We get the lists from the files in data_dir if they are there,
+                  otherwise we return their values as empty lists. The lists we
+                  look for are genesUsed, which should be a list of locusIds
+                  from this genome that we are using, and ignore_list, which is a list
+                  of experiment names to ignore (columns from all.poolcount).
+            If debug_bool is set to true we print out resultant exps, all, genes to 'tmp' dir
+            We return the following variables: 
+                'exps_df' (The experiments dataframe)
+                'all_df' (The barcodes and locations dataframe)
+                'genes_df' (The total genes dataframe)
+                'genesUsed_list' (A python list of locusIds that we will use)
+                'ignore_list' (A python list of experiment names to ignore)
+
+        data_prep_2:
+            We first get the configuration variables out of the configuration
+            dict if they are there, otherwise we make them the default values.
+            Then we run the following functions:
+            set_up_ignore:
+                We update the experiments to ignore by performing the following tests:
+                1. We take all the columns of experiments in all_df (ignoring metadata columns), 
+                    and take the sum over each column. We check, for each experiment,
+                    that the sum is greater than the value 'minSampleReads'. In other words,
+                    we take the sum of all the reads over all the strains for each
+                    experiment and check if there were enough of them, enough of them
+                    meaning the number is greater than the number in minSampleReads.
+                2. If the Drop column is True in exps_df then we ignore that column.
+                    (For each row in the experiments file, we have a column called 
+                    'Drop', and if it is indicated to be True, then we ignore that
+                    row - we get the name of the experiment to ignore because on
+                    that row there is also the column 'name', which indicates
+                    the name of the experiment correlated with all_df). In data_prep1
+                    we just prepare the Drop Column to contain boolean values.
+                3. For each experiment name we choose to ignore, we remove the 
+                    column from all_df (where they are column names) & the row from
+                    exps_df (where the name is under the column 'name')
+                Note that we update BOTH 'exps_df' and 'all_df' here.
+            get_central_insert_bool_list:
+                We look through all the rows of all_df, each of which represents a
+                strain as a barcode, and information related to that barcode,
+                like insertion location and amount of times it appears per experiment.
+                We look at the value 'f' for each row. 'f' is the fraction of location
+                (from 0 to 1) within the gene that the transposon was inserted. 
+                For example, if a gene has length 900 base pairs, and the 
+                transposon was inserted at position 300, then 'f' would be .333.
+                So if the value 'f' is between 0.1 and 0.9, then we keep that
+                barcode (the value in central_insert_bool_list is True).
+                We return a list the length of all_df (nAllStrains).
+                The list is called 'central_insert_bool_list'.
+            createExpsT0:
+                The overall function returns a dict. First,
+                we create a dataframe out of exps_df which only holds experiments (rows)
+                that have their 'short' column as 'Time0', i.e. 'Control' Experiments.
+                Then we take the 't0set' or 'control_group' name of those experiments and
+                create a dict which maps the control_group -> list of experiments in that control
+                group which are actually control experiments. Note, we do not include any
+                non-control experiments in this dict.
+                We return this dict, which is called 'expsT0'.
+            create_t0tot:
+                We create the data frame t0tot.
+                First we take expsT0, which is a python dict
+                which maps T0 group to list of experiment 
+                names which belong to it (but only the controls,
+                the true time0s, not any experiment to be
+                compared to it). Then for each T0 group,
+                we sum the experiments related to it 
+                over all the reads. So we end up with a 
+                dataframe that contains as many columns
+                as T0 groups, and the number of rows in that
+                column is as many as in all_df.
+                We return this data frame called 't0tot'.
+            createt0gN:
+                We get a dataframe (t0_gN) which sums the time0 names
+                over the places where the locusId is the same
+                and only keeps those insertions that are central.
+                (Aggregate t0tot over locusId)
+                The number of rows in this is the number of unique 
+                locusIds which had a central insertion in them.
+                The values are aggregate sums over those same parameters.
+                The column names are the same as t0tot, plus the column
+                locusId.
+                We return the dataframe 't0_gN'.
+            createStrainsUsed:
+                We make strainsUsed a list which contains True or False values for 
+                each strain in all_df such that both the strain has an insertion
+                centrally in a gene (meaning .1<f<.9) AND that the mean 
+                of insertions over the t0 totals (t0tot) is greater than the 
+                integer minT0Strain.
+                We return the variable named 'strainsUsed_list'
+            getGenesUsedList:
+                We take t0_gN, which is the time0 totals summed over locusIds, 
+                and we take the mean for each row over the Time0 reads.
+                So now we have a series with row number = unique LocusIds,
+                and values are the mean of the Time0 reads over that locusId.
+                There are no longer as many columns as there are Time0 groups,
+                (now there is only one column).
+                Then we filter out the locusIds where the mean over the Time0
+                reads is less than the integer threshold 'minT0Gene'.
+                We store these initial locusIds (strings) as genesUsed list.
+                Then we filter out genes that belong to scaffolds which
+                have too few total genes on them. In other words, if a scaffold 
+                has fewer genes on it than the integer 'minGenesPerScaffold', then we 
+                won't use those genes in the analysis.
+                Then we check that all the locusIds in the current genesUsed list
+                are also in the genes_df (dataframe from genes.GC)
+                We return this list called 'genesUsed_list'.
+            get_GenesUsed12:
+                We get the locusIds which have enough insertions both under 0.5 and over
+                0.5 within the gene (percentage of length), where enough means values
+                over minT0Gene/2. Then we also make sure all those genes are also
+                in our original genesUsed_list, which have other thresholds, like
+                belonging to large enough scaffolds.
+                If the total number of remaining locusIds
+                is less than minLengthGenesUsed12, then we raise an Exception.
+                We return this list called 'genesUsed_list12'
+            check_that_every_t0set_is_in_t0tot:
+               We make sure every t0set value in the exps_df column 't0set'
+               is also a column name in t0tot.
+            Then we update strainsUsed_list to only include strains that 
+            were inserted in genes that are included in genesUsed_list.
+            We also create a temporary variable strainsUsed_list12 that 
+            only contains strains that were inserted in genes that are 
+            in genesUsed_list12 (good insertions for both halves).
+            Then we create all the important logging integers generated
+            during this phase of the analysis:
+                nAllStrains = number of rows ( all.poolcount )
+                nAllStrainsCentral = number of rows in all.poolcount with 0.1<f<0.9
+                nAllStrainsCentralGoodGenes = number of rows in all.poolcount with 0.1<f<0.9
+                                              AND all locusIds are in the list 'GenesUsed'
+                                                (27659 in Keio) - also known as nUsefulReads
+                                                This is the same as nStrainsUsed
+                nAllStrainsCentralGoodGenes12 = number of rows in all.poolcount with 0.1<f<0.9
+                                              AND all locusIds are in the list 'GenesUsed12'
+                                                (27659 in Keio) - also known as nUsefulReads
+                nStrainsUsed  = nAllStrainsCentralGoodGenes, just another name.
+                nTotalGenes = number of rows (genes.GC)
+                nGenesUsed = (len(genesUsed)) number of rows in genes.GC that we actually use
+                            which is equivalent to the number of unique genes
+                            that have good insertions in them. (1355 in Keio)
+                            Which is the same as the output fitness and t score dataframes
+                nGenesUsed12 = (len(genesUsed12)) number of locusIds with a good amount of 
+                                insertions in both halves of 'f' from all_df. Both df1 and df2 
+                                in GeneFitness() have this number of rows.
+                nExperiments = number of rows in experiments file
+
+            We print these out to the console, and store them in a dict called 'num_vars_d'.
+            Finally we return the variables that are used in the future:
+                all_df, exps_df, genes_df, genesUsed_list, 
+                strainsUsed_list_new, genesUsed_list12, t0_gN, t0tot, expsT0
+                And num_vars_d for debugging.
         analysis1:
             In this part of the analysis, we compute fitness per strain as well as
             fitness per Gene. The way we do this is that we go through each experiment,
@@ -88,10 +253,10 @@
             they could give nDebug_cols=N where N is the number of experiments
             they would like to run analysis on.
             Finally, before running the analysis on each selected experiment,
-            we find the subset of the good strains which were inserted in 
+            we select the subset of the good strains which were inserted in 
             the first half of the genes (in other words if the insertion occured
             before the halfway point of the gene). We call this array of booleans
-            use1.
+            'use1'.
             Now we run the analysis (gene_strain_fit_func) on each experiment 
             (number of experiments we run on = nDebug_cols)
             and each analysis returns a dictionary with 3 values: gene_fit (a pd dataframe
@@ -108,228 +273,435 @@
             within a dictionary called GeneAndStrainFit with keys being the experiment
             names, and each experiment is associated with one of the smaller dictionaries.
             We return this dictionary GeneAndStrainFitResults.
-        gene_strain_fit_func (analysis1):
-            This function is run for every single set_index_name in all_df, and that set_index_name
-            is passed into this function as the first argument, 'set_index_name'. All other arguments
-            are not changed at all when this function is called and are documented elsewhere. 
-            We get results for GeneFitness (fitness per Gene), and Strain Fitness (fitness
-            per strain). GeneFitness gives a dataframe whose number of rows is the number of genes
-            in genesUsed. StrainFitness returns two series whose length is the same as the total
-            number of strains in all.poolcount. StrainFitness is a very simple function that gives
-            log2 ratios and standard error, each of which take only a line to compute. On the other
-            hand, GeneFitness is a very complicated function in which multiple normalizations and
-            statistical computations are done in order to make the GeneFitness a more reasonable
-            value.
-            Within this function, we first find the associated t0set name related to our current 
-            experiment, and get the reads and t0 read sums. If our current experiment
-            (denoted by the set_index_name) is a Time0 experiment, then we subtract the current
-            experiment values from the sum for this Time0, since the sum for this Time0 is
-            an aggregation over the several experiments associated with this Time0.
-            If this is the only Time0 experiment associated with this Time0, then we
-            skip computation for it. At this point, we get the total StrainFitness
-            values, which, as mentioned above, returns two series whose length is the 
-            same as the total number of strains in all.poolcount. These two series are
-            StrainFitness and Standard Error per strain. We don't use these two series
-            further within this function, now we move on to computing per Gene Fitness.
-            When computing Gene Fitness, we use a subset of all.poolcount in which 
-            the strains were inserted into genes and in good locations and in abundant 
-            enough amounts over genes and over scaffolds. GeneFitness is a very complex 
-            function which is described in its own Description section; it returns
-            a dataframe with per Gene values.
 
-        GeneFitness (analysis1):
-            This runs on every experiment (set + Index name).
-            Our four primary inputs are the exps_used_strains (current experiment
-            strains which are used), all_used_locId (the locusIds for all the used
-            strains), all_used_f (the insertion fraction for all the strains),
-            and the t0_used, which is the related t0 sums for the current experiment.
-            First, we call Average Strain Fitness on all the strains given as an input;
-            this gives us a dataframe (main_df) with values per Gene. The number of rows
-            in this dataframe are the total number of usable genes, the ids of the genes
-            are called 'locusId'.
-            The column names in this dataframe are
-                locusId <str>: The locusId to which this row is associated.
-                fit: fitRaw column normalized by Median 
-                fitNaive (float): Median normalized log2 difference between tot0 and tot 
-                fitRaw (float): Sum of weighted adjusted fitness scores divided by total weight. 
-                sd (float): Standard Deviation computed fancy way
-                sumsq (float): [Sum of the weighted square of the difference between adjusted fitness 
-                                and fitRaw] divided by total weight.
-                sdNaive (float): Standard Deviation computed in Naive way 
-                n (int): Total number of strains in this locusId
-                nEff (float ): The sum of the strain weights in these indeces/ max weight
-                tot (int ): The sum of the experiment reads over the locusID
-                tot0 (int): The sum of the Time0s over the locusId
-            Then we normalize the 'fit' values using the function NormalizeByScaffold,
-            which simply adds a column to our dataframe, the column is called
-            'fitnorm', for 'Normalized Fitness'.
-            Then we call Average Strain Fitness twice again. Once for the whole set of 
-            gene insertions, once for the insertions within .1<f<.5, and once for .5<f<.9. 
-            The num rows of first_half_df and second_half_df (called for .1<f<.5 and .5<f<.9) is nGenesUsed12, 
-            which is the total number of genes that have enough insertions on both sides of the gene.
-            We use these two dataframes (first_half_df and second_half_df) to get statistical information
-            on how balanced the insertions are regarding gene Fitness (pseudovar, se, t).
-            The new dataframe columns we compute are 
-            fit1, fit2, fitnorm1, fitnorm2, tot1, tot0_1, tot2, tot0_2, pseudovar, se, t
-            fit1 through tot0_2 are just the computed fitness scores for the 1st and 
-            second halves respectively, except for fitnorm1 and fitnorm2 are computed
-            like this:
-                fit1 + fitnorm - fit
-            Where fitnorm and fit come from the main_df dataframe, and fit1 are the fit
-            scores for first_half_df. fitnorm2 is computed similarly just with fit2 instead of
-            fit1.
-            When it comes to the reasoning behind computing 'pseudovar', 'se' and 't', 
-            things get complicated. Explained separately. 
+            gene_strain_fit_func (analysis1):
+                This function is run for every single set_index_name in all_df, and that set_index_name
+                is passed into this function as the first argument, 'set_index_name'. All other arguments
+                are not changed at all when this function is called and are documented elsewhere. 
+                We get results for GeneFitness (fitness per Gene), and Strain Fitness (fitness
+                per strain). GeneFitness gives a dataframe whose number of rows is the number of genes
+                in genesUsed. StrainFitness returns two series whose length is the same as the total
+                number of strains in all.poolcount. StrainFitness is a very simple function that gives
+                log2 ratios and standard error, each of which take only a line to compute. On the other
+                hand, GeneFitness is a very complicated function in which multiple normalizations and
+                statistical computations are done in order to make the GeneFitness a more reasonable
+                value.
+                Within this function, we first find the associated t0set name related to our current 
+                experiment, and get the reads and t0 read sums. If our current experiment
+                (denoted by the set_index_name) is a Time0 experiment, then we subtract the current
+                experiment values from the sum for this Time0, since the sum for this Time0 is
+                an aggregation over the several experiments associated with this Time0.
+                If this is the only Time0 experiment associated with this Time0, then we
+                skip computation for it. At this point, we get the total StrainFitness
+                values, which, as mentioned above, returns two series whose length is the 
+                same as the total number of strains in all.poolcount. These two series are
+                StrainFitness and Standard Error per strain. We don't use these two series
+                further within this function, now we move on to computing per Gene Fitness.
+                When computing Gene Fitness, we use a subset of all.poolcount in which 
+                the strains were inserted into genes and in good locations and in abundant 
+                enough amounts over genes and over scaffolds. GeneFitness is a very complex 
+                function which is described in its own Description section; it returns
+                a dataframe with per Gene values.
 
-        AvgStrainFitness (analysis1): Done for each experiment_name
-            We take three main input variables:
-                1. exp_used_strains: The used reads values from all_df, 
-                    it is a pandas Series of values, whose index is the row number
-                    from all.poolcount where it originated, and whose length is
-                    nAllStrainsCentralGoodGenes*, and the * is there because
-                    it could include strains that are in all the genes
-                    with good insertions, or it could only be the reads
-                    with even stronger gene insertions, where there are
-                    enough reads in both the top and bottom half.
-                2. t0_used: The sum of the t0 reads for this experiment,
-                    taken from all_df, and summed over the columns whose
-                    experiments are associated with the t0 value for
-                    this experiment_name. This is also a pandas Series,
-                    whose  indexes are exactly the same as for exp_used_strains.
-                    length = nAllStrainsCentralGoodGenes*
-                3. all_used_locId: The associated locusIds for the above
-                    two pandas Series, has the same index. Also taken
-                    from all.poolcount (all_df)
-                    length = nAllStrainsCentralGoodGenes*
-            This function is run 3 times. The first time we run it on
-            all the strains who are inserted in a good place in genes
-            that we are using with high enough abundance. (called main_df)
-            The second time we run it we are running it on the strains who are 
-            inserted within 0.1 and 0.5 of the gene (0.1<f<0.5). (called first_half_df)
-            The third time we run it we are running it on the strains who are 
-            inserted within 0.5 and 0.9 of the gene (0.5<f<0.9). (called second_half_df)
-            The next step is that we get the 'readratio', which is a float.
-            The readratio is the sum of the reads for this experiment
-            divided by the sum of the reads for the time0s for this
-            experiment.
-            Now we create a variable called 'strainFit', which is essentially
-            taking the log2 values of exp_used_strains (the experiment original
-            reads) and subtracting the log2 values of the time0s for those reads,
-            and then doing a median normalization of the difference.
-            So log2(originalreads) - log2(t0reads) = x; then return mednorm(x).
-            BUT we add in the readratio to the original reads and the inverse
-            of the readratio to the t0reads. Why?
-            Now we create strainPseudoCount. In order to create strainPseudo count,
-            first we get the medians of the strainFit values (already log2 normalized) 
-            over the various genes. So suppose there are 15 strains (log2 normalized)
-            in one gene (e.g. 'trp'); then we take the median of all those and essentially
-            create a mapping from locusId -> median. This is called geneFitMedians.
-            Then we also get a counting of how many times each gene was inserted into,
-            so for that gene 'trp' we would get a mapping to the number 15. This 
-            is done for all genes (represented by locusId strings) and is placed
-            in a variable called locusId2TimesSeen_d.
-            Now we create the strainPseudoCount list, whose length will be 
-            nAllStrainsCentralGoodGenes(*), i.o.w as long as the three main
-            inputs. How we create it is like this:
-            We go through each locusId in locusId2TimesSeen_d, and check if the number
-            of times it was seen is greater than a threshold integer called
-            'minGeneFactorNStrains'. If it is greater than this threshold, we
-            add the number 2^(median of the locusId (from geneFitMedians)) multiplied
-            by the readratio, which is sum(reads)/sum(time0s). Which is essentially
-            reversing the strainFit action, making strainPseudoCounts essentially
-            the strain counts but over the medians.
-            That being said, if the number of times the locusId was seen doesn't 
-            pass the threshold, then we simply add the readratio itself to the
-            strainPseudoCount list.
-            Now we use the strainPseudoCount list to adjust the strainFit values.
-            This part is unclear to me why it's done the way it is done.
-            In order to create an adjusted StrainFit, we take the strainPseudoCount
-            list, and take its square root (element-wise) and call it expPC,
-            then we create a T0 pseudocount which is 1/expPC (call it t0PC). 
-            Now we adjust the strainFit by adding these PseudoCount square root
-            and inverse to their respective original reads values, taking 
-            the log2 of those and subtracting the T0 sum from the Exp sum,
-            and also subtracting a 'strainFitAdjust' number. For this
-            strainFit, which is adjusted, we don't apply median normalization.
-            Now we compute the Standard Deviation per strain.
-            Then we get weights per strain, based on the number of reads in the Time0
-            and the experiments. The weights are used to measure strainFitness for
-            a gene more accurately. The strains with less reads are weighted less,
-            and the strains with more reads are weighted higher.
-            Once we have the Standard Deviation per strain, the weights per strain,
-            and the adjusted strain fitness, then we can go on to compute the following
-            values per gene:
-                fitRaw (float): Sum of weighted adjusted fitness scores divided by total weight. 
-                sd (float): Standard Deviation computed fancy way
-                sumsq (float): [Sum of the weighted square of the difference between adjusted fitness 
-                                and fitRaw] divided by total weight.
-                sdNaive (float): Standard Deviation computed in Naive way 
-                n (int): Total number of strains in this gene
-                nEff (float ): The sum of the strain weights in these indeces/ max weight
-                tot (int ): The sum of the experiment reads over the locusID
-                tot0 (int): The sum of the Time0s over the gene
-            We create a dictionary which stores all of these values per gene, and then
-            once we're done computing over all the locusIds, we convert the dictionary
-            into a dataframe, with the columns being the above values (fitRaw,...,tot0).
-            Then we create two new values which are based on the above values over all
-            the genes: 'fit' and 'fitNaive'. 'fit' is the median normalization of 'fitRaw' from
-            each gene, then 'fitNaive' is a naive computation of fitness based on tot and
-            tot0 (median normalized log2 difference of the two).
-            We return this dataframe called 'fitness_df'. The total number of rows in
-            this dataframe is the number of used Genes, since it's one row per used
-            gene.
-       NormalizeByScaffold (analysis1):
-          We create the column 'fitnorm' for main_df from GeneFitness.
-          How:
-          We take the series of locusIds from main_df (which are unique),
-          and find their locations within the series genes_df['locusId'] which are also
-          unique. Then we take the subset of the dataframe genes_df which match
-          to those locations and take its scaffoldId, begin values and locusIds and
-          combine them with the fitness values from AvgStrainFitness, and create
-          a dataframe called tmp_df.
-          Then we group values by scaffoldIds (which are not unique), and get
-          the rows of tmp_df which are associated with that scaffoldId.
-          We check that the total number of rows associated with that scaffoldId
-          pass the threshold 'minToUse'. If it doesn't, we remove the fitness
-          values for those rows. If it does we continue to the next part.
-          Now we take the median of the rows associated with that scaffoldId
-          and subtract it from them (median normalization on a subset of the
-          rows).
-          Then, if the number of rows associated with this scaffoldId pass
-          the window threshold, we take the running median with window size
-          251 of the sorted genes (A running median looks backwards and 
-          forwards the same amount and computes the median using half 
-          the window after and half before, so in this case 125 after and 
-          125 before), and then we subtract that median from those values.
-          Then we also normalize by the mode, and a simple way to 
-          estimate the mode if there aren't repeating values is through
-          the gaussian kernel density estimation function:
-          //rmflight.github.io/post/finding-modes-using-kernel-density-estimates/
+            GeneFitness (analysis1):
+                This runs on every experiment (set + Index name).
+                Our four primary inputs are the exps_used_strains (current experiment
+                strains which are used), all_used_locId (the locusIds for all the used
+                strains), all_used_f (the insertion fraction for all the strains),
+                and the t0_used, which is the related t0 sums for the current experiment.
+                First, we call Average Strain Fitness on all the strains given as an input;
+                this gives us a dataframe (main_df) with values per Gene. The number of rows
+                in this dataframe are the total number of usable genes, the ids of the genes
+                are called 'locusId'.
+                The column names in this dataframe are
+                    locusId <str>: The locusId to which this row is associated.
+                    fit: fitRaw column normalized by Median 
+                    fitNaive (float): Median normalized log2 difference between tot0 and tot 
+                    fitRaw (float): Sum of weighted adjusted fitness scores divided by total weight. 
+                    sd (float): Standard Deviation computed fancy way
+                    sumsq (float): [Sum of the weighted square of the difference between adjusted fitness 
+                                    and fitRaw] divided by total weight.
+                    sdNaive (float): Standard Deviation computed in Naive way 
+                    n (int): Total number of strains in this locusId
+                    nEff (float ): The sum of the strain weights in these indeces/ max weight
+                    tot (int ): The sum of the experiment reads over the locusID
+                    tot0 (int): The sum of the Time0s over the locusId
+                Then we normalize the 'fit' values using the function NormalizeByScaffold,
+                which simply adds a column to our dataframe, the column is called
+                'fitnorm', for 'Normalized Fitness'.
+                Then we call Average Strain Fitness twice again. Once for the whole set of 
+                gene insertions, once for the insertions within .1<f<.5, and once for .5<f<.9. 
+                The num rows of first_half_df and second_half_df (called for .1<f<.5 and .5<f<.9) is nGenesUsed12, 
+                which is the total number of genes that have enough insertions on both sides of the gene.
+                We use these two dataframes (first_half_df and second_half_df) to get statistical information
+                on how balanced the insertions are regarding gene Fitness (pseudovar, se, t).
+                The new dataframe columns we compute are 
+                fit1, fit2, fitnorm1, fitnorm2, tot1, tot0_1, tot2, tot0_2, pseudovar, se, t
+                fit1 through tot0_2 are just the computed fitness scores for the 1st and 
+                second halves respectively, except for fitnorm1 and fitnorm2 are computed
+                like this:
+                    fit1 + fitnorm - fit
+                Where fitnorm and fit come from the main_df dataframe, and fit1 are the fit
+                scores for first_half_df. fitnorm2 is computed similarly just with fit2 instead of
+                fit1.
+                When it comes to the reasoning behind computing 'pseudovar', 'se' and 't', 
+                things get complicated. Explained separately. 
 
-            
-            
+            AvgStrainFitness (analysis1): Done for each experiment_name
+                We take three main input variables:
+                    1. exp_used_strains: The used reads values from all_df, 
+                        it is a pandas Series of values, whose index is the row number
+                        from all.poolcount where it originated, and whose length is
+                        nAllStrainsCentralGoodGenes*, and the * is there because
+                        it could include strains that are in all the genes
+                        with good insertions, or it could only be the reads
+                        with even stronger gene insertions, where there are
+                        enough reads in both the top and bottom half.
+                    2. t0_used: The sum of the t0 reads for this experiment,
+                        taken from all_df, and summed over the columns whose
+                        experiments are associated with the t0 value for
+                        this experiment_name. This is also a pandas Series,
+                        whose  indexes are exactly the same as for exp_used_strains.
+                        length = nAllStrainsCentralGoodGenes*
+                    3. all_used_locId: The associated locusIds for the above
+                        two pandas Series, has the same index. Also taken
+                        from all.poolcount (all_df)
+                        length = nAllStrainsCentralGoodGenes*
+                This function is run 3 times. The first time we run it on
+                all the strains who are inserted in a good place in genes
+                that we are using with high enough abundance. (called main_df)
+                The second time we run it we are running it on the strains who are 
+                inserted within 0.1 and 0.5 of the gene (0.1<f<0.5). (called first_half_df)
+                The third time we run it we are running it on the strains who are 
+                inserted within 0.5 and 0.9 of the gene (0.5<f<0.9). (called second_half_df)
+                The next step is that we get the 'readratio', which is a float.
+                The readratio is the sum of the reads for this experiment
+                divided by the sum of the reads for the time0s for this
+                experiment.
+                Now we create a variable called 'strainFit', which is essentially
+                taking the log2 values of exp_used_strains (the experiment original
+                reads) and subtracting the log2 values of the time0s for those reads,
+                and then doing a median normalization of the difference.
+                So log2(originalreads) - log2(t0reads) = x; then return mednorm(x).
+                BUT we add in the readratio to the original reads and the inverse
+                of the readratio to the t0reads. Why?
+                Now we create strainPseudoCount. In order to create strainPseudo count,
+                first we get the medians of the strainFit values (already log2 normalized) 
+                over the various genes. So suppose there are 15 strains (log2 normalized)
+                in one gene (e.g. 'trp'); then we take the median of all those and essentially
+                create a mapping from locusId -> median. This is called geneFitMedians.
+                Then we also get a counting of how many times each gene was inserted into,
+                so for that gene 'trp' we would get a mapping to the number 15. This 
+                is done for all genes (represented by locusId strings) and is placed
+                in a variable called locusId2TimesSeen_d.
+                Now we create the strainPseudoCount list, whose length will be 
+                nAllStrainsCentralGoodGenes(*), i.o.w as long as the three main
+                inputs. How we create it is like this:
+                We go through each locusId in locusId2TimesSeen_d, and check if the number
+                of times it was seen is greater than a threshold integer called
+                'minGeneFactorNStrains'. If it is greater than this threshold, we
+                add the number 2^(median of the locusId (from geneFitMedians)) multiplied
+                by the readratio, which is sum(reads)/sum(time0s). Which is essentially
+                reversing the strainFit action, making strainPseudoCounts essentially
+                the strain counts but over the medians.
+                That being said, if the number of times the locusId was seen doesn't 
+                pass the threshold, then we simply add the readratio itself to the
+                strainPseudoCount list.
+                Now we use the strainPseudoCount list to adjust the strainFit values.
+                This part is unclear to me why it's done the way it is done.
+                In order to create an adjusted StrainFit, we take the strainPseudoCount
+                list, and take its square root (element-wise) and call it expPC,
+                then we create a T0 pseudocount which is 1/expPC (call it t0PC). 
+                Now we adjust the strainFit by adding these PseudoCount square root
+                and inverse to their respective original reads values, taking 
+                the log2 of those and subtracting the T0 sum from the Exp sum,
+                and also subtracting a 'strainFitAdjust' number. For this
+                strainFit, which is adjusted, we don't apply median normalization.
+                Now we compute the Standard Deviation per strain.
+                Then we get weights per strain, based on the number of reads in the Time0
+                and the experiments. The weights are used to measure strainFitness for
+                a gene more accurately. The strains with less reads are weighted less,
+                and the strains with more reads are weighted higher.
+                Once we have the Standard Deviation per strain, the weights per strain,
+                and the adjusted strain fitness, then we can go on to compute the following
+                values per gene:
+                    fitRaw (float): Sum of weighted adjusted fitness scores divided by total weight. 
+                    sd (float): Standard Deviation computed fancy way
+                    sumsq (float): [Sum of the weighted square of the difference between adjusted fitness 
+                                    and fitRaw] divided by total weight.
+                    sdNaive (float): Standard Deviation computed in Naive way 
+                    n (int): Total number of strains in this gene
+                    nEff (float ): The sum of the strain weights in these indeces/ max weight
+                    tot (int ): The sum of the experiment reads over the locusID
+                    tot0 (int): The sum of the Time0s over the gene
+                We create a dictionary which stores all of these values per gene, and then
+                once we're done computing over all the locusIds, we convert the dictionary
+                into a dataframe, with the columns being the above values (fitRaw,...,tot0).
+                Then we create two new values which are based on the above values over all
+                the genes: 'fit' and 'fitNaive'. 'fit' is the median normalization of 'fitRaw' from
+                each gene, then 'fitNaive' is a naive computation of fitness based on tot and
+                tot0 (median normalized log2 difference of the two).
+                We return this dataframe called 'fitness_df'. The total number of rows in
+                this dataframe is the number of used Genes, since it's one row per used
+                gene.
+            NormalizeByScaffold (analysis1):
+              We create the column 'fitnorm' for main_df from GeneFitness.
+              How:
+              We take the series of locusIds from main_df (which are unique),
+              and find their locations within the series genes_df['locusId'] which are also
+              unique. Then we take the subset of the dataframe genes_df which match
+              to those locations and take its scaffoldId, begin values and locusIds and
+              combine them with the fitness values from AvgStrainFitness, and create
+              a dataframe called tmp_df.
+              Then we group values by scaffoldIds (which are not unique), and get
+              the rows of tmp_df which are associated with that scaffoldId.
+              We check that the total number of rows associated with that scaffoldId
+              pass the threshold 'minToUse'. If it doesn't, we remove the fitness
+              values for those rows. If it does we continue to the next part.
+              Now we take the median of the rows associated with that scaffoldId
+              and subtract it from them (median normalization on a subset of the
+              rows).
+              Then, if the number of rows associated with this scaffoldId pass
+              the window threshold, we take the running median with window size
+              251 of the sorted genes (A running median looks backwards and 
+              forwards the same amount and computes the median using half 
+              the window after and half before, so in this case 125 after and 
+              125 before), and then we subtract that median from those values.
+              Then we also normalize by the mode, and a simple way to 
+              estimate the mode if there aren't repeating values is through
+              the gaussian kernel density estimation function:
+              //rmflight.github.io/post/finding-modes-using-kernel-density-estimates/
 
 
+        analysis_2:
+            First thing, we create 'gene_fit_d', which is a python dict.
+                We take the GeneFitResults, a python dict that
+                has keys being the experiment names and dataframes with
+                categories (like log ratios) being the values, and we convert it to
+                a dict with each category being a key, and those point
+                to dataframes with each column being an experiment name,
+                and each row being associated with one gene, the genes
+                being denoted by a pandas Series within the dictionary
+                under the key 'g'. (This pandas series 'g' contains the 
+                locusIds (strings)).
+                Another thing we do in this creation of gene_fit_d, is 
+                we replace the key 'fitnorm' with 'lrn' (for log ratios
+                normalized) and 'fit' with 'lr' (for just log ratios).
+            Then we initialize the Quality DataFrame. 
+                Out of the rows of exps_df, we only take the experiments 
+                that are found in the columns of the dataframe of normalized
+                log ratios. Meaning we only take the experiments 
+                that passed the thresholds necessary to have analysis
+                performed on them. We take these rows from the dataframe
+                'exps_df' but only the columns "name", "short", and "t0set",
+                all other columns we ignore. We find these rows through the column
+                "name".
+            Next we run FitReadMetrics and FitQuality in order to add 
+                more columns to our Quality DataFrame.
+            FitReadMetrics:
+                We take the subset of all_df with the used experiment names
+                as the columns (all rows included), and we compute the sums
+                over all rows for each of the experiments for the following:
+                nMapped (the total number of reads mapped under that column).
+                nPastEnd (the total number of pastEnd reads under that column).
+                nGenic (the total number of reads with good gene insertions).
+                Good gene insertions means inserted between .1 and .9 as 'f'.
+                Then we create a dataframe whose index is the experiment
+                names and the columns are 'nMapped', 'nPastEnd' and 'nGenic',
+                so the number of rows of the dataframe is the same as the
+                number of good experiments, whereas the number of columns
+                is fixed to 3.
+            In FitQuality we create 12 metrics based on correlations
+                and finding adjacent pairs of genes or genes that are
+                expected to be in the same operon based on their distance.
+                First we get the dataframe crudeOpGenes, which is similar to the genes_df dataframe
+                in terms of its columns, but it is a dataframe with pairs of consecutive 
+                genes from genes_df, with an extra column 'Sep' denoting the distance
+                between the genes, and a column 'bOp' that says whether this distance
+                is less than the median distance or not (True if less, False if greater).
+                We get another similar dataframe called adj which are the adjacent pairs
+                but without the Sep or bOp values. (Can we not use this dataframe?)
+                Then we get the matching index between gene_fit_d genes (under the
+                column name 'g') and the locusIds in genes_df. Using these matching index,
+                we compute the correlation between each column in the normalized log ratios
+                dataframe and the GC values of those genes.
+                in genes_df. GC_corr is a pandas Series whose length is the number
+                of experiments (columns) in gene_fit_d['lrn']; where the index
+                labels are the experiment names, and the values are the Pearson 
+                correlations. 
+                Finally, we compute statistics regarding the experiments and return
+                a dataframe with the following labels and meanings:
+                "nUsed" (int): Sum over all locusIds of the sum over the locusId (Sum of sum) per experiment
+                "gMed" (int): Median of all locusIds over the sums per locusId per experiment
+                "gMedt0" (int): Median over the time0 totals per experiment
+                "gMean" (float): Mean of all locusIDs over the sums per locusId per experiment
+                "cor12" (float): Correlation of normalized log ratios between first and second half 
+                                 gene insertion locations per experiment
+                "mad12" (float): Medians of the Absolute values of the differences between first and second half
+                                    normalized log ratios.
+                "mad12c" (float): Median of some statistic over all experiments
+                "mad12c_t0" (float): Same as above but over the time0s
+                "opcor" (float): Correlation between normalized log ratios of pairs of genes predicted to be 
+                         in the same operon per experiment
+                "adjcor" (float): Correlation between normalized log ratios of pairs of adjacent genes per experiment
+                "gccor" (float): Correlation between normalized log ratios of genes and their GC percentage per experiment
+                "maxFit" (float): The maximum normalized log ratio value per experiment
 
-                    
+            We combine the initialized Quality DataFrame, the Fit Read
+            Metrics DataFrame and the FitQuality DataFrame and that's
+            our current Quality DataFrame, which contains 19 (or possibly 18) columns,
+            and the number of rows is equal to the total number of 
+            good experiments (so it varies per run).
+            Then we run the function FEBA_Exp_Status
+            FEBA_Exp_Status:
+                For each row in the Quality DataFrame, we check the values under 
+                certain columns to decide how to label it's quality.
+                The values we check, in this order, are:
+                1. Is it a Time0? ("Time0")
+                2. Does it have a low Median over the sums over locusIds? ("low_count")
+                    - param 'min_gMed'
+                3. Does it have a high Median of the differences between first and
+                    second half log ratios? ("high_mad12") - param 'max_mad12' 
+                4. Is there a low correlation between the first and second half
+                    log ratios? ("low_cor12") - param 'min_cor12'
+                5. Is the GC correlation high or is the adjacent genes correlation
+                    high? ("high_adj_gc_cor") - params 'max_gccor' & 'max_adjcor'
+                If none of these are True, then the experiment is given the status
+                "OK". Otherwise, it returns the first value for which it is 
+                True in the above questions, the value it returns is the
+                string in parentheses.
+                The whole function returns a pandas series the length of which
+                is the number of rows in quality_df.
+            Now we continue to add on to the quality dataframe by creating
+            a column
+            called 'u', in which we go through each experiment, and if its 
+            status is "OK", then we give it the value True, otherwise it is
+            given the value False. So 'u' contains whether the experiment
+            has a status that passed. After adding the column 'u' to the 
+            Quality DataFrame, it has 20 (or 19) columns total.
 
-            Within this function we create the following variables:
-                strainWeight, strainFit_adjusted, strainSD.
+            We shift our focus to the 'strains' DataFrame. 
+            First, we only take the metadata columns from all.poolcount,
+            meaning the columns:
+            'barcode', 'rcbarcode', 'scaffold', 'strand', 'pos', 'locusId', 'f'
+            and add new columns to it:
+            'used': which strains were used to compute Gene Fitness (just the
+                strainsUsed List as a column.)
+            'enoughT0': which strains had a high enough Mean within T0s
 
-                    strainWeight: comes from t0_used, and exp_used_strains
-                    strainFit_adjusted: comes from t0_used, exp_used_strains,
-                                        condPseudoCount, and t0PseudoCount.
-                                        condPseudoCount and t0PseudoCount
-                                        come from strainPseudoCount,
-                                        which comes from geneFit1 and readratio,
-                                        geneFit1 comes from strainFit,
-                                        which is the simple computation
-                                        you'd expect the program to do.
-                                        
+            Now we create two important dataframes:
+            strain_lr and strain_se: Both of which have the
+                same length (num rows) as all.poolcount. Both simply
+                take the values computed in the function
+                StrainFitness (in analysis1) and turn them into 
+                dictionaries with experiment names as the column 
+                names and the values as the columns beneath them.
+
+            Next we normalize the strain fitness values (creating
+            the dataframe 'strain_lrn'). We use the function
+            normalize_per_strain_values:
+                First, for every strain, we find the closest gene center from our list of used genes
+                (genes that passed all the thresholds to be used). We call this list 'strainToGene'.
+                So for strains that are within a gene, their closest gene will also be the gene
+                that they are inserted into.
+                Next, we create a dataframe that is the difference between the normalized log
+                ratio values per experiment per gene, and the log ratio values per gene (that 
+                are not normalized). 
+                Then, for each strain, we normalize its fitness values in a complicated way.
+                The way in which the fitness values are normalized are the following:
+                create_strain_lrn:
+                    First, for each experiment, we take the per gene difference between 
+                    the normalized log ratio and the plain old log ratio, and then we 
+                    map those values onto all the strains using the Strain To Closest 
+                    Gene series we computed earlier - for each strain, we take the 
+                    closest Gene and place the difference between its normalized 
+                    log fitness and its regular log fitness in a pandas Series we call 
+                    "per_strain_exp_diff". Then we group the strains by scaffold and
+                    take the medians of per_strain_exp_diff by these scaffolds - we create 
+                    a series where for each
+                    strain, instead of having its own gene difference value, it now
+                    has the median of all the strain difference values in the same scaffold
+                    as it. Next we multiply that entire series by negative 1 and call it
+                    neg_str_scf_med, for 'negative strain per scaffold median'.
+                    Now we initialize the numbers we'll add to the original log ratios
+                    in order to get the normalized strain values. For each value in
+                    per_strain_exp_diff, if it's 'NA', then we insert the negative
+                    median of the differences from neg_str_scf_med, otherwise, we leave the
+                    value as it is (the per_strain_exp_diff value); we call the new series 'sdiff'.
+                    To get the final normalized log ratios for the strains under this 
+                    experiment, we simply add the original log ratios per strain to the values
+                    in sdiff, and that's our column for this experiment.
+                    The entire normalized log ratio per strain dataframe has the same 
+                    shape as the unnormalized log ratio per strain dataframe, one column
+                    per experiment, and the number of rows is nAllStrains.
+
+            So within the function analysis2, we have created several new dataframes
+                to the output 'gene_fit_d':
+                'q': for quality, with 20/19 columns and one row per used experiment,
+
+                ALL BELOW DATAFRAMES HAVE THEIR NUMBER OF ROWS  = nAllStrains
+                'strains': The original strains meta_ix dataframe, with two extra
+                            columns 'used' and 'enoughT0'
+                Below dataframes have number of columns = nExperimentsUsed 
+                'strain_lr': The log ratios per experiment (unnormalized)
+                'strain_se': The standard error per strain per experiment
+                'strain_lrn': The normalized log ratios per experiment
+
+                This is a pandas Series (also length nAllStrains):
+                'strainToGene': Closest gene to strain using index from 'g' pandas Series.
+
+            Function ends and returns gene_fit_d
+
+        analysis_3:
+            First, we store some variables for outputs:
+                genesUsed: list<str> The locusIds, e.g. names, of the genes which
+                                    passed qualifications for being included
+                                    in the analysis.
+                strainsUsed: list<bool> A list of booleans, which is the same length
+                                    as the number of rows in all.poolcount, which
+                                    has True for every strain that we include in
+                                    computing GeneFitness, and False otherwise.
+                genesUsed12: list<str> The locusIds of the genes that passed qualifications
+                                        for being included in the analysis as well as
+                                        having abundant enough insertions on both 
+                                        halves, i.e. enough insertions in the 0.1 ->0.5
+                                        fraction of the gene, and enough insertions in
+                                        the 0.5 -> 0.9 fraction of the gene.
+                t0_gN: A dataframe with the t0 totals over locusIds, may be more
+                        genes than nGenesUsed due to not omitting genes whose
+                        numbers don't pass minT0GenesUsed. Index label
+                        is locusId.
+                gN: A dataframe with all the gene totals, ignoring genes that
+                    don't pass qualifications. Any gene that is in all_df's locusId
+                    column is included. Same number of rows as t0_gN. Index label
+                    is locusId.
+            Next, in summary, we add two types of dataframes: DataFrames that compute cofitness
+            (meaning correlation between genes), and DataFrames that compute special
+            values (i.e. specific situations (experiment and gene) that have exceptional
+            fitness, either good or bad). They are not similar in shape or size.
+            The dataframes that are related to cofitness which we add are the following:
+                "pairs", "cofit". Where "pairs" contains
+                cofitness between specific pairs of genes (adjacent genes,
+                genes predicted to be in same operon, and randomly chosen genes), 
+                "cofit" contains
+                the top cofit genes for each gene. We can define how many
+                are included in the 'top cofit' by inputting the variable
+                nTopCofit to the function analysis3. If it's None, then
+                the program decides how many that is.
+            The dataframes related to special values are
+                "specphe", and "high"
+                "specphe" contains the instances where we found specific 
+                phenotypes for strains within experiments (which gene and which 
+                experiment).
+                "high" contains instances where we find both fitness values AND
+                t scores that pass thresholds as well as a number of other
+                columns from the experiments dataframe and the genes dataframe.
+
+            The function ends and we return gene_fit_d.
 
 
-
-    Main Variables:
+    Main Variables (Consult RunFEBA.py to find the broad names of these variables
+                    and keep them consistent throughout the program):
         strainsUsed:
             list<bool> Length of all_df which decides which of the 'strains'
             we actually use. Must pass two qualifications:

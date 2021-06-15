@@ -163,7 +163,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
       
         logging.info("\n\n\nRunning Section 4 - Analysis 2\n\n\n")
         gene_fit_d, CrudeOp_df = analysis_2(GeneFitResults, exps_df, all_df, 
-                                            genes_df, central_insert_bool_list,
+                                            genes_df, 
                                             strainsUsed_list, t0tot, 
                                             meta_ix=7, debug=False, minT0Strain=3)
 
@@ -186,7 +186,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         logging.info("\n\n\nRunning Section 5- Analysis 3\n\n\n")
         gene_fit_d = analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
                genesUsed_list, strainsUsed_list, genesUsed_list12,
-               t0_gN, t0tot, CrudeOp_df, central_insert_bool_list,
+               t0_gN, t0tot, CrudeOp_df, 
                meta_ix=7, minT0Strain=3, dbg_prnt=False)
         
         if breakpoint_vars:
