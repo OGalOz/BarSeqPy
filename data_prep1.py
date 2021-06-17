@@ -230,7 +230,12 @@ def getDataFrames(data_dir, FEBA_dir, drop_exps=False,
     if 'Drop' in exps_df:
         new_drops = []
         for ix, value in exps_df['Drop'].items():
-            if value.strip().upper() == "TRUE":
+            if not isinstance(value, str):
+                if pd.isna(value):
+                    new_drops.append(False)
+                else:
+                    raise Exception(f"Value in 'Drop' not string: {value}")
+            elif str(value).strip().upper() == "TRUE":
                 new_drops.append(True)
             elif value.strip().upper() == "FALSE":
                 new_drops.append(False)

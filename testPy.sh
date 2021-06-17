@@ -1,3 +1,3 @@
 
-python3 RunFEBA.py testorg outdir/ lib/ $1 $2 1
+python3 RunFEBA.py testorg outdir/ lib/ config.json $1 1 99
 

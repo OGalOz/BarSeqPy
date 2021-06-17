@@ -108,7 +108,9 @@ Input to FEBA_Save_Tables 'gene_fit_d' is big:
 """
 
 def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
-                     op_dir, exps_df, writeImage=False, debug=False):
+                     op_dir, exps_df, 
+                     cfg=None,
+                     writeImage=False, debug=False):
     """
     Args:
         gene_fit_d (python dict): Documentation above function
@@ -131,6 +133,11 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
     Outputs the following dataframes:
 
     """
+    if cfg is None:
+        cfg = {
+                "strong_lr": 2,
+                "strong_t": 5
+        }
 
     # Setting print options for debugging:
     pd.set_option('display.max_columns', None)
@@ -221,7 +228,7 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
     # q is quality, u is used
     if list(gene_fit_d['q']['u']).count(True) == 0:
         logging.warning("***Warning: 0 'OK' experiments.")
-        tmp_df = tmp_df.sort_values(by='locusId')
+        tmp_new = tmp_df.sort_values(by='locusId')
     else:
         used_q_rows = gene_fit_d['q'][gene_fit_d['q']['u']] 
         used_names = used_q_rows['name'] 
@@ -232,10 +239,13 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
         rename_columns = list(used_q_rows['name'] + ' ' + used_q_rows['short'])
         rename_d = {val: rename_columns[ix] for ix, val in enumerate(list(tmp_new.columns[4:]))}
         tmp_new = tmp_new.rename(columns=rename_d)
+        tmp_new = tmp_new.sort_values(by='locusId')
+        del lrn_copy
 
     write_DataFrame_and_log(os.path.join(op_dir, "fit_logratios_good.tab"), 
                             tmp_new, df_name = "fit logratios good")
-    del tmp_new, lrn_copy
+
+    del tmp_new
 
     
     #9 Gene Counts 
@@ -346,10 +356,11 @@ def FEBA_Save_Tables(gene_fit_d, genes_df, organism_name_str,
 
     # 17 Strong - 
     # We create the dataframe 'strong.tab'
-    # we find which normalized log ratios are greater than 2 and 
-    #             't' scores are greater than 5. We store results in one list
-    #             'which_are_strong' which is list<[col_name (str), row_ix (int)]>
-    create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, debug=debug)
+    # we find which normalized log ratios are greater than 2 e.g. and 
+    #             't' scores are greater than 5 e.g. 
+    create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, 
+                      strong_lr=cfg["strong_lr"], strong_t=cfg["strong_t"],
+                      debug=debug)
 
 
     #18 High
@@ -408,12 +419,14 @@ def extract_gene_fit_d_category_to_tsv_basic(input_df,
     return None
 
 
-def create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, debug=False):
+def create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, 
+                      strong_lr=2, strong_t=5,
+                      debug=False):
     """
     Description:
         We create the dataframe 'strong.tab'
-    # we find which normalized log ratios are greater than 2 and 
-    #             't' scores are greater than 5. We store results in one list
+    # we find which normalized log ratios are greater than strong_lr (=2) and 
+    #             't' scores are greater than strong_t (=5). We store results in one list
     #             'which_are_strong' which is list<[col_name (str), row_ix (int)]>
     We end up with a dataframe with a single row for every strong fit and t score
     value, and we add other informational columns like 'sysName', 'desc' (description)
@@ -428,8 +441,8 @@ def create_strong_tab(gene_fit_d, genes_df, exps_df, op_dir, debug=False):
     abs_t = gene_fit_d['t'].abs()
     for col in gene_fit_d['lrn'].columns:
         for row_ix in range(gene_fit_d['lrn'].shape[0]):
-            if abs_lrn[col].iloc[row_ix] > 2 and \
-                abs_t[col].iloc[row_ix] > 5:
+            if abs_lrn[col].iloc[row_ix] > strong_lr and \
+                abs_t[col].iloc[row_ix] > strong_t:
                 which_are_strong.append([col, row_ix])
     strong_t = [gene_fit_d['t'][x[0]].iloc[x[1]] for x in which_are_strong]
     strong_lrn = [gene_fit_d['lrn'][x[0]].iloc[x[1]] for x in which_are_strong]

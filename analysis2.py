@@ -32,7 +32,8 @@ All functions and subroutines:
 
 def analysis_2(GeneFitResults, exps_df, all_df, genes_df, 
                strainsUsed_list, t0tot,
-               meta_ix=7, debug=False, minT0Strain=3):
+               cfg=None,
+               meta_ix=7, debug=False):
     """
     Args:
         GeneFitResults:
@@ -65,6 +66,14 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df,
                     tot0_2 (int or nan): For every locusId found in genesUsed12, we give the tot0 value of second_half_df
                   strain_fit: pandas Series (float) per-strain fitness (len(all_df))
                   strain_se: pandas Series (float) (len(all_df))
+        cfg (python dict):
+            minT0Strain: int
+            status_d (python dict):
+                min_gMed : (float)
+                max_mad12 : (float) 
+                min_cor12 : (float) 
+                max_gccor : (float) 
+                max_adjcor : (float)
     Returns:
         gene_fit_d: (python dict)
             g (pandas Series (str)): pandas Series of locusIds
@@ -290,11 +299,16 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df,
 
         Function ends and returns gene_fit_d
             
-        
-
-
-        
     """
+
+    if cfg is not None:
+        minT0Strain = cfg["minT0Strain"] 
+    else:
+        minT0Strain=3
+        cfg = {
+                "status_d": None
+        }
+
 
     gene_fit_d = initialize_gene_fit_d(GeneFitResults, debug=True) 
 
@@ -346,7 +360,7 @@ def analysis_2(GeneFitResults, exps_df, all_df, genes_df,
     #DEBUG:
     #gene_fit_d['q'].to_csv("tmp/py_gene_fit_q2.tsv", sep="\t")
     # status is a pandas series of str, should be exa
-    status = FEBA_Exp_Status(gene_fit_d['q'], dbg_prnt=False)
+    status = FEBA_Exp_Status(gene_fit_d['q'], status_d=cfg["status_d"], dbg_prnt=False)
 
     # We get a list of status is ok + False for the rows of q that surpass length of status
     gene_fit_d['q']['u'] = [True if status.iat[i] == "OK" else False for i in range(len(status))] 
@@ -700,10 +714,11 @@ def FitQuality(gene_fit_d, genes_df, prnt_dbg=False):
 
 
 
-def FEBA_Exp_Status(quality_df, min_gMed=50, max_mad12=0.5, min_cor12=0.1,
-                    max_gccor=0.2, max_adjcor=0.25, dbg_prnt=False):
+def FEBA_Exp_Status(quality_df, status_d=None,
+                    dbg_prnt=False):
     """
-    quality_df: A dataframe with cols:
+    Args:
+        quality_df: A dataframe with cols:
             from FitReadMetrics:
                 nMapped (int): Sum over all used experiments
                 nPastEnd (int): Sum of pastEnd
@@ -730,7 +745,7 @@ def FEBA_Exp_Status(quality_df, min_gMed=50, max_mad12=0.5, min_cor12=0.1,
             ["num"]: (from_exps_df) experiment number from experiments file
 
             index labels for dataframe: experiment names (string)
-       
+        status_d: Dict containing threshold params 
     Returns:
         status_list (pandas Series(list<str>)): each status is from: {"OK", "Time0", "low_count", "high_mad12", 
                                                     "low_cor12", "high_adj_gc_cor"}
@@ -760,6 +775,20 @@ def FEBA_Exp_Status(quality_df, min_gMed=50, max_mad12=0.5, min_cor12=0.1,
         # 0.1 threshold was chosen based on Marinobacter set5, in which defined media experiments with cor12 = 0.1-0.2
         # clearly worked, and Kang Polymyxin B (set1), with cor12 ~= 0.13 and they barely worked.
     """
+
+    if status_d is not None:
+        min_gMed = status_d["min_gMed"]
+        max_mad12 = status_d["max_mad12"]
+        min_cor12 = status_d["min_cor12"]
+        max_gccor = status_d["max_gccor"]
+        max_adjcor = status_d["max_adjcor"]
+    else:
+        min_gMed=50 
+        max_mad12=0.5 
+        min_cor12=0.1
+        max_gccor=0.2 
+        max_adjcor=0.25
+
 
     if dbg_prnt:
         print(quality_df.columns)
@@ -1050,9 +1079,9 @@ def normalize_per_strain_values(strains, genes_df, gene_fit_d):
     print(reshuffled_genes)
     """
     strainToGene = NewStrainClosestGenes(strains, 
-                                      gene_fit_d['g'],
-                                      genes_df,
-                                      dbg_prnt=False)
+                                         gene_fit_d['g'],
+                                         genes_df,
+                                         dbg_prnt=False)
 
     # Subtract every value from log ratio normalized matrix by log ratio values.
     lrn_minus_lr = gene_fit_d['lrn'] - gene_fit_d['lr']
@@ -1179,7 +1208,7 @@ def NewStrainClosestGenes(strains, locusIds_used, genes_df, dbg_prnt=False):
 
 
 def create_strain_lrn(strain_lr, gdiff, strains, strainToGene, dbg_print=False):
-    """ We normalize per strain values?
+    """ We normalize per strain values
     Args:
         strain_lr:  
             (comes from strain_lr) (float): dataframe with one column per setindexname

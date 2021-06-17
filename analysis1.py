@@ -20,7 +20,8 @@ from translate_R_to_pandas import *
 def analysis_1(all_df, exps_df, genes_df, 
                expsT0, t0tot, 
                genesUsed, genesUsed12, strainsUsed,  
-               minGenesPerScaffold=10, meta_ix=7,debug=False, nDebug_cols=None,
+               cfg=None,
+               meta_ix=7,debug=False, nDebug_cols=None,
                starting_debug_col=0):
     """
     Questions: is all_df at all modified? 
@@ -110,6 +111,14 @@ def analysis_1(all_df, exps_df, genes_df,
         Function descriptions:
     """
 
+    # Preparing cfg
+    if cfg is not None:
+        minGenesPerScaffold = cfg["minGenesPerScaffold"]
+    else:
+        minGenesPerScaffold = 10
+
+
+
     # The bulk of the program occurs here: We start computing values
     all_index_names = list(all_df.columns)[meta_ix:]
     nAllStrainsCentralGoodGenes = list(strainsUsed).count(True)
@@ -123,17 +132,21 @@ def analysis_1(all_df, exps_df, genes_df,
     all_df_used = all_df[strainsUsed]
     t0tot_used = t0tot[strainsUsed]
 
+    
 
-    # We take all the index names without the meta indeces (0-meta_ix (int))
-    nSetIndexToRun = len(all_index_names) if nDebug_cols == None else nDebug_cols
-    num_ix_remaining = nSetIndexToRun
     # use1 refers to the strains inserted in the first half of the gene
     use1 = [bool(x < 0.5) for x in all_df_used['f']]
 
     GeneAndStrainFitResults = {}
+    start_index, end_index = get_starting_and_ending_indeces(all_index_names,
+                                                            starting_debug_col,
+                                                            nDebug_cols)
+    num_ix_remaining = end_index - start_index
     print(f"Running through {num_ix_remaining}/{len(all_index_names)} possible experiments"
-          f" starting at experiment number {starting_debug_col} from all")
-    for set_index_name in all_index_names[starting_debug_col: starting_debug_col + nSetIndexToRun]:
+          f" starting at experiment number {start_index} and ending at experiment"
+          f" number {end_index}.")
+
+    for set_index_name in all_index_names[start_index:end_index]:
         print(f"Currently working on index {set_index_name}")
         
         start_time = time.time()
@@ -145,10 +158,13 @@ def analysis_1(all_df, exps_df, genes_df,
                                                           exps_df, exp_used_strains, 
                                                           genes_df, expsT0,
                                                           t0tot_used, 
-                                                          genesUsed, genesUsed12, minGenesPerScaffold,
+                                                          genesUsed, genesUsed12, 
                                                           all_df_used,
                                                           use1,
-                                                          all_df)
+                                                          all_df,
+                                                          minGenesPerScaffold=minGenesPerScaffold,
+                                                          cfg=cfg
+                                                          )
 
             if gene_strain_fit_result_d is not None:
                 GeneAndStrainFitResults[set_index_name] = gene_strain_fit_result_d
@@ -175,9 +191,11 @@ def analysis_1(all_df, exps_df, genes_df,
 def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains, 
                          genes_df, expsT0,
                          t0tot_used, 
-                         genesUsed, genesUsed12, minGenesPerScaffold,
+                         genesUsed, genesUsed12, 
                          all_df_used, use1,
-                         all_df
+                         all_df,
+                         minGenesPerScaffold=10,
+                         cfg=None
                          ):
     """
     Description:
@@ -231,13 +249,15 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
         genesUsed: list<locusId> where each locusId is a string
         genesUsed12 (list<str>): list of locusIds that have both high f (>0.5) and low f (<0.5)
                     insertions with enough abundance of insertions on both sides
-        minGenesPerScaffold: int
         all_df_central_inserts (Dataframe): The parts of all_df that corresponds to True in strainsUsed
                                             Num rows is nAllStrainsCentral 
         use1: boolean list for the all_df_used with 0.1 < f <0.5 is True, otherwise false,
                 Length is nAllStrainsCentralGoodGenes
         all_df: Just for Strain Fitness, the entire all dataframe not excluding any strains
         tot0: Just for Strain Fitness, the entire tot0 dataframe not excluding any strains
+        minGenesPerScaffold: int
+        cfg (python dict): contains input parameters 
+                            base_se:
 
     Created vars:
         to_subtract: a boolean which says whether the 'short' name
@@ -259,6 +279,13 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
             strain_se: pandas Series (float) with a computation applied to values
 
     """
+    
+    if cfg is None:
+        base_se = 0.1
+    else:
+        base_se = cfg["base_se"]
+
+
     # t0set is a string, to_subtract is a bool depending on if this set has short Time0
     t0set, to_subtract = get_t0set_and_to_subtract(set_index_name, exps_df)
 
@@ -304,9 +331,11 @@ def gene_strain_fit_func(set_index_name, exps_df, exp_used_strains,
                            exp_used_strains, all_used_f, 
                            t0_used,
     		           genesUsed, sorted(genesUsed12), 
+                           base_se=base_se,
     		           minGenesPerScaffold=minGenesPerScaffold,
                            set_index_name=set_index_name,
                            cdebug=False,
+                           cfg=cfg,
                            use1 = use1)
     
     # gene_fit, strain_fit, and strain_se
@@ -350,9 +379,10 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
                 all_used_f, t0_used, genesUsed,
                 genesUsed12, minGenesPerScaffold=None,
                 set_index_name=None,
-                base_se = 0.1,
+                base_se=0.1,
                 cdebug=False,
-                use1=None):
+                use1=None,
+                cfg=None):
     """
     Args:
         genes_df: Data frame holding genes.GC table
@@ -381,6 +411,8 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
         use1: boolean list for the all_df_used with 0.1 < f <0.5 is True, otherwise false,
                 Length is nAllStrainsCentralGoodGenes
 
+        cfg (python dict): 
+            norm_median_window: rolling median of adjacent genes window (int)
 
         # other arguments are passed on to AvgStrainFitness()
         # base_se -- likely amount of error in excess of that given by variation within fitness values
@@ -477,10 +509,17 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
 
     """
 
+    if cfg is None:
+        cfg = {
+                "avgstrn": None,
+                "norm_median_window": 251
+                }
+
     
     main_df = AvgStrainFitness(exp_used_strains, 
                                t0_used, 
                                all_used_locId,
+                               cfg=cfg['avgstrn'],
                                mini_debug=1,
                                current_experiment_name=set_index_name,
                                run_typ="main_df",
@@ -488,26 +527,29 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
     
     main_df['fitnorm'] = NormalizeByScaffold(main_df['fit'], main_df['locusId'],
                                              genes_df, minToUse=minGenesPerScaffold,
+                                             window=cfg["norm_median_window"],
                                              cdebug=False)
 
     strainsUsed_first_half = [bool(all_used_f.iat[i] < 0.5 and all_used_locId.iat[i] in genesUsed12) \
-                    for i in range(len(all_used_locId))]
+                              for i in range(len(all_used_locId))]
 
     # num rows should be len(genesUsed12)
     first_half_df = AvgStrainFitness(exp_used_strains[strainsUsed_first_half], 
                                t0_used[strainsUsed_first_half], 
                                all_used_locId[strainsUsed_first_half],
+                               cfg=cfg['avgstrn'],
                                mini_debug=1,
                                current_experiment_name=set_index_name,
                                run_typ="first_half_df")
 
     
     strainsUsed_second_half = [bool(all_used_f.iat[i] >= 0.5 and all_used_locId.iat[i] in genesUsed12) \
-                    for i in range(len(all_used_locId))]
+                               for i in range(len(all_used_locId))]
     # num rows is equal to num rows of first_half_df = len(genesUsed12)
     second_half_df = AvgStrainFitness(exp_used_strains[strainsUsed_second_half], 
                                t0_used[strainsUsed_second_half], 
                                all_used_locId[strainsUsed_second_half],
+                               cfg=cfg['avgstrn'],
                                mini_debug=1,
                                current_experiment_name=set_index_name,
                                run_typ="second_half_df")
@@ -542,6 +584,7 @@ def GeneFitness(genes_df, all_used_locId, exp_used_strains,
                 [second_half_df['tot'].iloc[x] if x is not np.nan else np.nan for x in matched_ixs])
     main_df['tot0_2'] = pd.Series(
                 [second_half_df['tot0'].iloc[x] if x is not np.nan else np.nan for x in matched_ixs])
+
 
     """
     for low n, the estimated variance is driven by the overall variance, which can be estimated
@@ -583,10 +626,7 @@ def AvgStrainFitness(exp_used_strains,
                     t0_used, 
                     all_used_locId,
                     current_experiment_name=None,
-		    minStrainT0 = 4, minGeneT0 = 40,
-                    minGeneFactorNStrains=3,
-                    strainFitAdjust=0,
-		    maxWeight = 20,
+                    cfg=None,
 		    debug=False,
                     mini_debug=0,
                     run_typ=None):
@@ -643,6 +683,19 @@ def AvgStrainFitness(exp_used_strains,
     Description:
         We get strain fitness values for an experiment
     """
+
+    if cfg is not None:
+        minStrainT0 = cfg["minStrainT0"]
+        minGeneT0 = cfg["minGeneT0"]
+        minGeneFactorNStrains = cfg["minGeneFactorNStrains"]
+        strainFitAdjust = cfg["strainFitAdjust"]
+        maxWeight = cfg["maxWeight"]
+    else:
+        minStrainT0 = 4
+        minGeneT0 = 40
+        minGeneFactorNStrains=3
+        strainFitAdjust=0
+        maxWeight = 20
 
     if mini_debug > 0:
         print(f"Running AverageStrainFitness on {current_experiment_name} ({run_typ})")
@@ -1117,7 +1170,8 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
         scaffoldIds. Length is the same as fitValues (=nGenesUsed)
 
     Description:
-        We create the column 'fitnorm' for main_df in GeneFitness.
+        We create the column 'fitnorm' for main_df in GeneFitness, meaning we 
+        get the normalized fitness for this experiment.
         How:
         We take the series of locusIds from main_df (which are unique),
         and find their locations within the series genes_df['locusId'] which are also
@@ -1125,11 +1179,11 @@ def NormalizeByScaffold(fitValues, locusIds, genes_df, window=251, minToUse=10,
         to those locations and take its scaffoldId, begin values and locusIds and
         combine them with the fitness values from AvgStrainFitness, and create
         a dataframe called tmp_df.
-        Then we group values by scaffoldIds (which are not unique), and get
+        Then we group values by scaffoldIds, and get
         the rows of tmp_df which are associated with that scaffoldId.
         We check that the total number of rows associated with that scaffoldId
         pass the threshold 'minToUse'. If it doesn't, we remove the fitness
-        values for those rows. If it does we continue to the next part.
+        values for those rows. If it does then we continue to the next part.
         Now we take the median of the rows associated with that scaffoldId
         and subtract it from them (median normalization on a subset of the
         rows).
@@ -1235,3 +1289,40 @@ def mednorm(pd_series):
     # because the median becomes 0, and running it again won't change
     # the values at all.
     return pd_series - pd_series.median() 
+
+
+def get_starting_and_ending_indeces(all_index_names,
+                                    starting_debug_col,
+                                    nDebug_cols):
+
+
+    # We check that starting debug_col is less than total number of experiments
+    if starting_debug_col >= len(all_index_names):
+        raise Exception("Starting column number passes total number of columns!"
+                        f" starting_debug_col: {starting_debug_col}."
+                        f" total number of columns: {len(all_index_names)}")
+    elif starting_debug_col < 0:
+        raise Exception(" starting_debug_col must be greater than or equal to 0."
+                        f" current value: {starting_debug_col}")
+
+    start_ix = starting_debug_col
+    if nDebug_cols is not None:
+        if nDebug_cols < 1:
+            raise Exception(
+                            "nDebug_cols must be greater than or equal to one: "
+                            f" {nDebug_cols}")
+
+        if starting_debug_col + nDebug_cols > len(all_index_names):
+            logging.warning("Starting index plus total indeces to run surpasses"
+                            " total number of indeces.")
+            end_ix = len(all_index_names)
+        else:
+            end_ix = start_ix + nDebug_cols
+    else:
+        end_ix = len(all_index_names)
+
+    logging.info(f"Starting at index {start_ix}"
+                 f" and ending at index {end_ix}.")
+
+    return start_ix, end_ix
+

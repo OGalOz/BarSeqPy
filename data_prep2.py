@@ -273,8 +273,16 @@ def data_prep_2(exps_df, all_df, genes_df,
     if len(genesUsed_list) == 0:
         genesUsed_list = getGenesUsedList(t0_gN, strainsUsed_list, all_df, minT0Gene,
                                           genes_df, minGenesPerScaffold,
-                                          minGenesAllowed,)
+                                          minGenesAllowed)
         nUniqueUsableLocusIds = len(genesUsed_list)
+    else:
+
+        possible_genes = getGenesUsedList(t0_gN, strainsUsed_list, all_df, minT0Gene,
+                                          genes_df, minGenesPerScaffold,
+                                          minGenesAllowed)
+
+        genesUsed_list = [x for x in genesUsed_list if x in possible_genes]
+    
 
 
 
@@ -910,17 +918,8 @@ def getGenesUsedList(t0_gN, strainsUsed, all_df, minT0Gene,
     genesUsedpre = [(n0.iloc[i] >= minT0Gene) for i in range(n0.shape[0])]
 
     genesUsed_list = list(t0_gN['locusId'][genesUsedpre].unique())
-    if debug_print_bool:
-        with open("tmp/py_genesUsed.json","w") as f:
-            f.write(json.dumps(genesUsed_list))
 
-    removed_locusIds = list(all_locusIds_before_removal - set(genesUsed_list))
-
-    logging.info(f"Number of LocusIds removed because the mean didn't pass {minT0Gene}:"
-                f" {len(removed_locusIds)}. The locusIds: \n" + \
-                 ", ".join(removed_locusIds))
-
-    print(f"Initial number of remaining locusIds: {len(genesUsed_list)}")
+    print(f"Initial number of locusIds: {len(genesUsed_list)}")
 
     # HERE we refine the genesUsed list and remove genes which are in small scaffolds
 

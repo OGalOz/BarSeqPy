@@ -1,0 +1,70 @@
+{
+    "nDebug_cols": 40,
+    "starting_debug_col": 65,
+    "dp1_cfg": {
+        "drop_exps": true,
+        "okControls": false
+    },
+    "dp2_cfg": {
+        "minSampleReads" : 20000,
+        "minGenesPerScaffold" : 10,
+        "minT0Strain" : 3 ,
+        "minT0Gene" : 30,
+        "minGenesAllowed": 100,
+        "minLengthGenesUsed12" : 100,
+        "okControls": false,
+        "okDay" : true,
+        "okLane" : true
+    },
+    "an1_cfg": {
+        "minGenesPerScaffold": 10,
+        "base_se": 0.1,
+        "norm_median_window": 251,
+        "avgstrn": {
+            "minStrainT0": 4,
+            "minGeneT0": 40,
+            "minGeneFactorNStrains": 3,
+            "strainFitAdjust": 0,
+            "maxWeight": 20
+        }
+        
+    },
+    "an2_cfg": {
+        "minT0Strain": 3,
+        "status_d": {
+            "min_gMed" : 50,
+            "max_mad12" : 0.5,
+            "min_cor12" : 0.1,
+            "max_gccor" : 0.2,
+            "max_adjcor" : 0.25
+        }
+    },
+    "an3_cfg": {
+        "compute_cofit_bool" : true,
+        "compute_High_bool" : true,
+        "nTopCofit" : null,
+        "minT0Strain" : 3,
+        "minCofitExp" : 5,
+        "spec_cfg": {
+            "minT" : 5,
+            "minFit" : 1.0,
+            "percentile" : 0.95,
+            "percentileFit" : 1.0,
+            "minDelta" : 0.5
+        },
+        "high_cfg": {
+            "min_fit" : 4,
+            "min_t" : 5,
+            "max_se" : 2,
+            "min_reads" : 10,
+            "min_gMean" : 10,
+            "max_below" : 8,
+            "min_strains" : 2,
+            "min_strain_fraction" : 0.5
+        }
+    },
+    "fst_cfg": {
+        "strong_lr": 2,
+        "strong_t": 5
+    }
+}

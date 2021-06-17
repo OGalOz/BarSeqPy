@@ -30,7 +30,8 @@ Main functions in file:
 
 
 def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
-            debug_bool=False, breakpoint_vars=True,
+            cfg_fp,
+            debug_bool=False, breakpoints_bool=True,
             meta_ix=7):
     """ Entrypoint into running the FEBA analysis program
 
@@ -71,26 +72,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
     """
 
     # Preparing config variables
-    #cfg_d = json.loads(open(os.path.join(data_dir, "BSPconfig.json")).read())
-    #print(cfg_d)
-    #stop(75)
-    cfg_d = {
-            "dp1_cfg": {
-                "drop_exps": True,
-                "okControls": False
-            },
-            "dp2_cfg": {
-                "minSampleReads" : 2*10e4,
-                "minGenesPerScaffold" : 10,
-                "minT0Strain" : 3 ,
-                "minT0Gene" : 30,
-                "minGenesAllowed": 100,
-                "minLengthGenesUsed12" : 100,
-                "okControls": False,
-                "okDay" : True,
-                "okLane" : True
-            }
-    }
+    cfg_d = json.loads(open(cfg_fp).read()) 
     
     if start_point == 1:
         # Part 1 - Data Preparation 1
@@ -103,7 +85,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         logging.info("\n\n\nRunning Section 1 - Data Prep 1\n\n\n")
         exps_df, all_df, genes_df, genesUsed_list, ignore_list = res_dp1
         
-        if breakpoint_vars:
+        if breakpoints_bool:
             breakpoint1(exps_df, all_df, genes_df, genesUsed_list, ignore_list,
                         to_file=True)
         # End Part 1 - Data Preparation 1
@@ -127,7 +109,7 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         all_df, exps_df, genes_df, genesUsed_list = res_dp2[0]
         strainsUsed_list, genesUsed_list12, t0_gN, t0tot = res_dp2[1]
         expsT0, num_vars_d = res_dp2[2]
-        if breakpoint_vars:
+        if breakpoints_bool:
             breakpoint2("tmp/BP2", genesUsed_list, 
                 strainsUsed_list, genesUsed_list12, 
                 t0_gN, t0tot, 
@@ -144,11 +126,13 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         GeneFitResults = analysis_1(all_df, exps_df, genes_df,
                                 expsT0, t0tot, 
                                 genesUsed_list, genesUsed_list12, strainsUsed_list, 
-                                minGenesPerScaffold=10, meta_ix=7,
-                                debug=False, nDebug_cols=None,
-                                starting_debug_col=0)
+                                cfg=cfg_d["an1_cfg"], 
+                                meta_ix=7,
+                                debug=False, 
+                                nDebug_cols=cfg_d["nDebug_cols"],
+                                starting_debug_col=cfg_d["starting_debug_col"])
 
-        if breakpoint_vars:
+        if breakpoints_bool:
             breakpoint3("tmp/BP3", GeneFitResults)
 
     if start_point <= 4:
@@ -165,9 +149,10 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         gene_fit_d, CrudeOp_df = analysis_2(GeneFitResults, exps_df, all_df, 
                                             genes_df, 
                                             strainsUsed_list, t0tot, 
-                                            meta_ix=7, debug=False, minT0Strain=3)
+                                            cfg=cfg_d["an2_cfg"],
+                                            meta_ix=7, debug=False)
 
-        if breakpoint_vars:
+        if breakpoints_bool:
             breakpoint4("tmp/BP4", gene_fit_d, CrudeOp_df)
 
     if start_point <= 5:
@@ -187,9 +172,11 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
         gene_fit_d = analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
                genesUsed_list, strainsUsed_list, genesUsed_list12,
                t0_gN, t0tot, CrudeOp_df, 
-               meta_ix=7, minT0Strain=3, dbg_prnt=False)
+               meta_ix=7,
+               cfg=cfg_d["an3_cfg"],
+               dbg_prnt=False)
         
-        if breakpoint_vars:
+        if breakpoints_bool:
             breakpoint5("tmp/BP5", gene_fit_d)
 
     if start_point <= 6:
@@ -205,7 +192,9 @@ def RunFEBA(org_str, data_dir, FEBA_dir, start_point,
 
         logging.info("\n\n\nRunning Section 6 - FEBA Save Tables\n\n\n")
         FEBA_Save_Tables(gene_fit_d, genes_df, org_str,
-                         "tmp/Output", exps_df, writeImage=False)
+                         "tmp/Output", exps_df, 
+                         cfg=cfg_d["fst_cfg"], 
+                         writeImage=False)
 
     
     '''
@@ -1237,11 +1226,14 @@ def export_gene_fit_d(gene_fit_d, op_dir, dbg_prnt=True):
 def stop(line_num):
     raise Exception(f"Stopped, line {line_num}") 
 
+
+
 def main():
     args = sys.argv
     logging.basicConfig(level=logging.DEBUG)
-    if args[-1] != "1":
-        help_str = "Usage:\npython3 RunFEBA.py org_str data_dir FEBA_dir start_point export_intermediate_vars=[0|1] 1"
+    if args[-1] != "99":
+        help_str = "Usage:\npython3 RunFEBA.py org_str data_dir FEBA_dir start_point "
+        help_str += "[0|1](=export_intermediate_vars) cfg_fp 99"
         help_str += "\n start_point is an int which refers to where to start running the"
         help_str += " program. start_point = 1 is how it would be fully run."
         print(help_str)
@@ -1250,10 +1242,13 @@ def main():
         org_str = args[1]
         data_dir = args[2]
         FEBA_dir = args[3]
-        start_point = args[4]
-        export_intermediate_vars = False if args[5] == "0" else True 
-        RunFEBA(org_str, data_dir, FEBA_dir, int(start_point), debug_bool=True, 
-                breakpoint_vars=export_intermediate_vars)
+        cfg_fp = args[4]
+        start_point = args[5]
+        export_intermediate_vars = False if args[6] == "0" else True 
+        verify_num = args[7]
+        RunFEBA(org_str, data_dir, FEBA_dir, int(start_point), 
+                cfg_fp, debug_bool=True, 
+                breakpoints_bool=export_intermediate_vars)
 
 
 

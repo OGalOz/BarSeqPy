@@ -10,13 +10,12 @@ import random
 import time
 from translate_R_to_pandas import * 
 
-def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
+def analysis_3(gene_fit_d, GeneFitResults, genes_df, 
+               all_df, exps_df,
                genesUsed, strainsUsed, genesUsed12,
                t0_gN, t0tot, CrudeOp_df, 
-               compute_cofit_bool=True, compute_High_bool=True,
-               nTopCofit=None,
-               meta_ix=7, minT0Strain=3, 
-               minCofitExp=5,
+               meta_ix=7, 
+               cfg=None,
                dbg_prnt=False):
     """
     Args:
@@ -62,7 +61,6 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
                 sysName2, type2, scaffoldId2, begin2, end2, strand2, name2, desc2, GC2, nTA2, Sep, bOp
         minCofitExp (int): The minimum number of good experiments in order for us to 
                             compute the cofitness values.
-
 
     Returns:
         Adds these to gene_fit_d:
@@ -148,7 +146,22 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
         The function ends and we return gene_fit_d.
             
     """
-
+    if cfg is not None:
+        compute_cofit_bool = cfg["compute_cofit_bool"]
+        compute_High_bool = cfg["compute_High_bool"]
+        nTopCofit = cfg["nTopCofit"]
+        minT0Strain = cfg["minT0Strain"]
+        minCofitExp = cfg["minCofitExp"]
+    else:
+        compute_cofit_bool=True
+        compute_High_bool=True
+        nTopCofit=None
+        minT0Strain=3 
+        minCofitExp=5
+        cfg = {
+                "spec_cfg": None,
+                "high_cfg": None
+        }
 
 
     gene_fit_d['genesUsed'] = genesUsed
@@ -167,12 +180,15 @@ def analysis_3(gene_fit_d, GeneFitResults, genes_df, all_df, exps_df,
             print(f"u_true: {u_true}")
         if u_true >= minCofitExp:
             logging.info("Computing cofitness with {u_true} experiments")
-            gene_fit_d = compute_cofit(gene_fit_d, genes_df, CrudeOp_df, exps_df, nTopCofit=nTopCofit)
+            gene_fit_d = compute_cofit(gene_fit_d, genes_df, CrudeOp_df, exps_df, 
+                                        cfg, nTopCofit=nTopCofit)
         else:
             logging.info(f"Only {u_true} experiments of {gene_fit_d['q'].shape[0]} passed quality filters!")
 
     if compute_High_bool:
-        gene_fit_d['high'] = HighFit(gene_fit_d, genes_df, exps_df, all_df, dbg_prnt=True)
+        gene_fit_d['high'] = HighFit(gene_fit_d, genes_df, exps_df, all_df,
+                                    high_cfg=cfg["high_cfg"],
+                                    dbg_prnt=True)
 
     return gene_fit_d
 
@@ -214,7 +230,9 @@ def get_all_gN(all_df, meta_ix):
 
 
 
-def compute_cofit(gene_fit_d, genes_df, CrudeOp_df, exps_df, nTopCofit=None):
+def compute_cofit(gene_fit_d, genes_df, CrudeOp_df, exps_df, 
+                  cfg,
+                  nTopCofit=None):
     """
     Args:
 
@@ -229,6 +247,9 @@ def compute_cofit(gene_fit_d, genes_df, CrudeOp_df, exps_df, nTopCofit=None):
         CrudeOp_df (pandas DataFrame):
             Gene2, Gene1, sysName1, type1, scaffoldId1, begin1, end1, strand1, name1, desc1, GC1, nTA1, 
             sysName2, type2, scaffoldId2, begin2, end2, strand2, name2, desc2, GC2, nTA2, Sep, bOp
+
+        cfg (python dict):
+            spec_cfg (d): None or keys specified in SpecificPhenotypes function
 
 
 
@@ -320,11 +341,13 @@ def compute_cofit(gene_fit_d, genes_df, CrudeOp_df, exps_df, nTopCofit=None):
     gene_fit_d['cofit'] = TopCofit(gene_fit_d['g'], gene_fit_d['lrn'][used_experiment_names],
                                     pre_n=nTopCofit)
 
-    # Below incomplete
     tmp_df = gene_fit_d['q'][gene_fit_d['q']['u']].merge(exps_df, on=["name","short"])
+
     gene_fit_d['specphe'] = SpecificPhenotypes(gene_fit_d['g'], 
                             tmp_df, gene_fit_d['lrn'][used_experiment_names], 
-                            gene_fit_d['t'][used_experiment_names], dbg_prnt=True)
+                            gene_fit_d['t'][used_experiment_names], 
+                            spec_cfg = cfg["spec_cfg"],
+                            dbg_prnt=True)
 
     return gene_fit_d
 
@@ -415,7 +438,7 @@ def TopCofit(locusIds, lrn, pre_n=None, dbg=False, fraction=0.02):
         locusIds (pandas Series): is names of genes
         lrn (pd DataFrame): is a matrix of fitness values with columns set name index 
         pre_n (int or None): If int, then we get the top n=pre_n cofitness values for each gene.
-                            If None, then we compute the number 'n' in another way.
+                            If None, then we compute the number 'n' in another way, using 'fraction'
 
     Returns:
         out_df (pandas DataFrame): has columns:
@@ -537,9 +560,7 @@ def TopCofit(locusIds, lrn, pre_n=None, dbg=False, fraction=0.02):
 
 
 def HighFit(gene_fit_d, genes_df, exps_df, all_df,
-            min_fit=4, min_t=5, max_se=2, 
-            min_reads=10, min_gMean=10, max_below=8, min_strains=2, 
-            min_strain_fraction=0.5,
+            high_cfg=None,
             dbg_prnt=False):
     """
     Args:
@@ -589,6 +610,29 @@ def HighFit(gene_fit_d, genes_df, exps_df, all_df,
     Subroutines:
         py_order: (from translate_R_to_pandas)
     """
+
+    if high_cfg is not None:
+        min_fit = high_cfg["min_fit"]
+        min_t = high_cfg["min_t"]
+        max_se = high_cfg["max_se"]
+        min_reads = high_cfg["min_reads"]
+        min_gMean = high_cfg["min_gMean"]
+        max_below = high_cfg["max_below"]
+        min_strains = high_cfg["min_strains"]
+        min_strain_fraction = high_cfg["min_strain_fraction"]
+    else:
+        min_fit=4 
+        min_t=5 
+        max_se=2 
+        min_reads=10 
+        min_gMean=10 
+        max_below=8 
+        min_strains=2 
+        min_strain_fraction=0.5
+
+
+
+
     logging.info("Starting to compute High Fitness DataFrame")
     lrn = gene_fit_d['lrn']
     t = gene_fit_d['t']
@@ -610,6 +654,12 @@ def HighFit(gene_fit_d, genes_df, exps_df, all_df,
 
 
     logging.info(f"Number of high instances: {len(where_is_high)}")
+
+    if len(where_is_high) == 0:
+        new_high = pd.DataFrame.from_dict({
+                    "locusId": []
+                    })
+        return new_high 
 
     fit_high = []
     t_high = [] 
@@ -698,8 +748,7 @@ def HighFit(gene_fit_d, genes_df, exps_df, all_df,
 
 
 def SpecificPhenotypes(locusIds, q_sub_exps_df, used_lrn, used_t,
-                        minT=5, minFit=1.0, percentile=0.95,
-                        percentileFit=1.0, minDelta=0.5,
+                        spec_cfg=None,
                         dbg_prnt=False):
     """
     Args:
@@ -708,6 +757,12 @@ def SpecificPhenotypes(locusIds, q_sub_exps_df, used_lrn, used_t,
         used_lrn (pd.DataFrame): subset of lrn with used experiments
         used_t (pd.DataFrame): subset of t with used experiments
     Returns:
+        specific_df (pd.DataFrame):
+            Quality DataFrame columns adding columns:    
+                        "locusId","lrn","t". 
+                        Total num columns should be 23
+            Num rows are situations where experiments produced specific results
+                    
     Description:
         We want to identify "specific phenotypes", which are cases where a gene is sick.
         We have thresholds which the absolute value of the normalized log ratio (fitness)
@@ -725,6 +780,19 @@ def SpecificPhenotypes(locusIds, q_sub_exps_df, used_lrn, used_t,
         Its row number will be the number of specific phenotypes found.
 
     """
+
+    if spec_cfg is not None:
+        minT = spec_cfg["minT"]
+        minFit = spec_cfg["minFit"]
+        percentile = spec_cfg["percentile"]
+        percentileFit = spec_cfg["percentileFit"]
+        minDelta = spec_cfg["minDelta"]
+    else:
+        minT=5 
+        minFit=1.0 
+        percentile=0.95
+        percentileFit=1.0 
+        minDelta=0.5
 
     expsFields = set(q_sub_exps_df.columns).intersection(set(["name", "short", "Group", "Condition_1",
                                                         "Concentration_1", "Units_1", "Condition_2",
@@ -763,6 +831,12 @@ def SpecificPhenotypes(locusIds, q_sub_exps_df, used_lrn, used_t,
                 which_pass_list.append([row_ix, col_ix])
 
     logging.info(f"Found {len(which_pass_list)} specific phenotypes.")
+
+    if len(which_pass_list) == 0:
+        specific_df = pd.DataFrame({
+                        "locusId": []
+                        })
+        return specific_df
 
     # sp - specific
     sp_locId = locusIds.iloc[[x[0] for x in which_pass_list]]
